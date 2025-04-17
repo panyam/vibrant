@@ -2,6 +2,8 @@
 
 import { Modal } from './Modal';
 import { Section, SectionData, SectionType } from './Section';
+import { DocumentSection } from './types'; // Import the types
+
 
 /**
  * Manages document sections
@@ -422,6 +424,24 @@ export class SectionManager {
       this.emptyStateEl.classList.add('hidden');
     }
   }
+
+   /**
+    * Get all section data formatted for the document model.
+    */
+   public getDocumentSections(): DocumentSection[] {
+        return this.sectionData
+            .sort((a, b) => a.order - b.order) // Ensure sorted by order
+            .map(sectionDataItem => {
+                const sectionInstance = this.sections.get(sectionDataItem.id);
+                if (sectionInstance) {
+                    return sectionInstance.getDocumentData();
+                }
+                // Fallback or error handling if instance not found (shouldn't happen ideally)
+                console.warn(`Section instance not found for ID: ${sectionDataItem.id}`);
+                return null; // Or a default representation
+            }).filter(section => section !== null) as DocumentSection[]; // Filter out nulls
+    }
+
 
   /**
    * Initialize the component

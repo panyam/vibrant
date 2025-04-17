@@ -2,10 +2,14 @@
 
 import { Modal } from './Modal';
 
+import { DocumentSection, TextContent, DrawingContent, PlotContent } from './types'; // Import the types
+
 /**
  * Section types
  */
 export type SectionType = 'text' | 'drawing' | 'plot';
+
+
 
 /**
  * Section data interface
@@ -365,6 +369,33 @@ export class Section {
         this.contentElement.innerHTML = '';
         this.initializeContent();
       }
+    }
+  }
+  
+  /**
+   * Get the section data formatted for the document model.
+   */
+  public getDocumentData(): DocumentSection {
+    const baseData = {
+        id: this.data.id,
+        title: this.data.title,
+        order: this.data.order,
+    };
+
+    switch (this.data.type) {
+        case 'text':
+            // Ensure content is up-to-date if user didn't blur
+            const textArea = this.contentElement?.querySelector('div[contenteditable="true"]');
+            const currentContent = textArea ? textArea.innerHTML : this.data.content;
+            return { ...baseData, type: 'text', content: currentContent as TextContent };
+        case 'drawing':
+            // Placeholder content for drawing
+            const drawingContent: DrawingContent = { format: "placeholder_drawing", data: {} };
+            return { ...baseData, type: 'drawing', content: drawingContent };
+        case 'plot':
+            // Placeholder content for plot
+            const plotContent: PlotContent = { format: "placeholder_plot", data: {} };
+            return { ...baseData, type: 'plot', content: plotContent };
     }
   }
 }

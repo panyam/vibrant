@@ -5,6 +5,7 @@ import { DocumentTitle } from './DocumentTitle';
 import { Modal } from './Modal';
 import { SectionManager } from './SectionManager';
 import { ToastManager } from './ToastManager'; // We'll create this next
+import { LeetCoachDocument, DocumentSection, DocumentMetadata } from './types'; // Import the types
 
 /**
  * Main application initialization

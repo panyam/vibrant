@@ -140,6 +140,14 @@ export class DocumentTitle {
     }
 
     /**
+     * Get the current title text.
+     */
+    public getTitle(): string {
+        return this.originalTitle; // originalTitle is updated on save
+    }
+
+
+    /**
      * Initialize the component
      */
     public static init(): DocumentTitle {
