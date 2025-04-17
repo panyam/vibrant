@@ -1,0 +1,79 @@
+<!-- templates/Section.html -->
+
+{{ define "Section" }}
+<div id="section-template" class="hidden">
+    <!-- Section Header -->
+    <div class="section-header group bg-white dark:bg-gray-800 rounded-t-lg shadow-sm border-b border-gray-200 dark:border-gray-700 flex items-center">
+        <!-- Drag Handle -->
+        <div class="section-drag-handle p-3 cursor-move text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
+            </svg>
+        </div>
+        
+        <!-- Section Number and Title -->
+        <div class="section-title-container flex-1 p-3">
+            <h2 class="text-lg font-medium text-gray-900 dark:text-white flex items-center">
+                <span class="section-number mr-2">1.</span>
+                <span class="section-title">Section Title</span>
+            </h2>
+        </div>
+        
+        <!-- Section Controls -->
+        <div class="section-controls flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <!-- Move Up/Down Buttons -->
+            <button class="section-move-up p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" title="Move section up">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                </svg>
+            </button>
+            <button class="section-move-down p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" title="Move section down">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+            </button>
+            
+            <!-- Settings Button -->
+            <button class="section-settings p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200" title="Section settings">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+            </button>
+            
+            <!-- Delete Button -->
+            <button class="section-delete p-2 text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400" title="Delete section">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+            </button>
+            
+            <!-- AI Assistant Button -->
+            <button class="section-ai p-2 px-3 mr-2 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center" title="Ask LLM">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span class="text-sm font-medium">LLM</span>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Section Content -->
+    <div class="section-content bg-white dark:bg-gray-800 rounded-b-lg shadow-sm p-4">
+        <!-- Content will be dynamically added based on section type -->
+        <div class="section-type-placeholder text-gray-400 dark:text-gray-500 text-center py-8">
+            Select a section type to begin
+        </div>
+    </div>
+    
+    <!-- Add Section Button Area -->
+    <div class="add-section-area flex justify-center mt-4">
+        <button class="add-section-button inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-full text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-150">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1 text-blue-600 dark:text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />
+            </svg>
+            Add Section
+        </button>
+    </div>
+</div>
+{{ end }}

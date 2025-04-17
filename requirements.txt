@@ -1,0 +1,7 @@
+sortedcontainers
+anthropic
+pyperclip
+ipdb
+coverage
+pytest
+openai
