@@ -157,6 +157,17 @@ export class SectionManager {
     
     // Add to container
     this.sectionsContainer.appendChild(sectionEl);
+    // Add to container at the correct position
+    if (insertAfterId) {
+      const insertAfterEl = document.getElementById(insertAfterId);
+      if (insertAfterEl && insertAfterEl.nextElementSibling) {
+        this.sectionsContainer.insertBefore(sectionEl, insertAfterEl.nextElementSibling);
+      } else {
+        this.sectionsContainer.appendChild(sectionEl);
+      }
+    } else {
+      this.sectionsContainer.appendChild(sectionEl);
+    }
     
     // Create Section instance with callbacks
     const section = new Section(sectionData, sectionEl, {
