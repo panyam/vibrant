@@ -46,6 +46,22 @@ export class Section {
   private moveDownButton: HTMLElement | null;
   private settingsButton: HTMLElement | null;
   private llmButton: HTMLElement | null;
+
+  // Icon SVGs
+  private static readonly TEXT_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-full h-full"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" /></svg>`;
+  private static readonly DRAWING_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-full h-full"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" /></svg>`;
+  private static readonly PLOT_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-full h-full"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6" /></svg>`;
+
+  // Type-specific icon title attributes
+  private static readonly TYPE_TITLES: Record<SectionType, string> = {
+      text: "Text Section",
+      drawing: "Drawing Section",
+      plot: "Plot Section"
+  }
+
+  // DOM element for the type icon
+  private typeIconElement: HTMLElement | null;
+
   
   /**
    * Create a new section
@@ -64,10 +80,28 @@ export class Section {
     this.moveDownButton = element.querySelector('.section-move-down');
     this.settingsButton = element.querySelector('.section-settings');
     this.llmButton = element.querySelector('.section-ai');
+    this.typeIconElement = element.querySelector('.section-type-icon');
+
     
     this.bindEvents();
+
+    // Initialize the display title from the data
     if (this.titleElement) {
       this.titleElement.textContent = this.data.title;
+    }
+
+    // Initialize the type icon
+    if (this.typeIconElement) {
+        let iconSvg: string;
+        switch (this.data.type) {
+            case 'drawing': iconSvg = Section.DRAWING_ICON_SVG; break;
+            case 'plot':    iconSvg = Section.PLOT_ICON_SVG; break;
+            case 'text':
+            default:        iconSvg = Section.TEXT_ICON_SVG; break;
+        }
+        this.typeIconElement.innerHTML = iconSvg;
+        // Set title attribute for accessibility/tooltip
+        this.typeIconElement.setAttribute('title', Section.TYPE_TITLES[this.data.type] || 'Section');
     }
     this.initializeContent();
   }
