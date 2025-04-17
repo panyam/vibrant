@@ -17,6 +17,37 @@ export class SectionManager {
   private tocItemTemplate: HTMLElement | null;
   private modal: Modal;
 
+  // Predefined title suggestions for different section types
+  private static readonly TEXT_TITLES: string[] = [
+    "Requirements", "Functional Requirements", "Non-Functional Requirements",
+    "API Design", "Data Model", "High-Level Design", "Detailed Design",
+    "Assumptions", "Security Considerations", "Deployment Strategy",
+    "Monitoring & Alerting", "Future Considerations", "Capacity Planning",
+    "System Interfaces", "User Scenarios"
+  ];
+  private static readonly DRAWING_TITLES: string[] = [
+    "Architecture Overview", "System Components", "Data Flow Diagram",
+    "Sequence Diagram", "Network Topology", "Component Interactions",
+    "Deployment View", "API Interactions", "Database Schema",
+    "High-Level Architecture", "User Flow"
+  ];
+  private static readonly PLOT_TITLES: string[] = [
+    "Scalability Analysis", "Latency vs Throughput", "QPS Estimates",
+    "Storage Projections", "Cost Analysis", "Performance Metrics",
+    "Resource Utilization", "Traffic Estimation", "Data Growth",
+    "Benchmark Results"
+  ];
+
+  /**
+   * Selects a random title from the appropriate list based on section type.
+   */
+  private static getRandomTitle(type: SectionType): string {
+    const titles = type === 'drawing' ? this.DRAWING_TITLES : type === 'plot' ? this.PLOT_TITLES : this.TEXT_TITLES;
+    const randomIndex = Math.floor(Math.random() * titles.length);
+    return titles[randomIndex] || `New ${type.charAt(0).toUpperCase() + type.slice(1)} Section`; // Fallback
+  }
+
+
   constructor() {
     // Get container elements
     this.sectionsContainer = document.getElementById('sections-container');
@@ -109,7 +140,8 @@ export class SectionManager {
     
     // Create section data
     const sectionId = `section-${this.nextSectionId++}`;
-    const sectionTitle = `New ${type.charAt(0).toUpperCase() + type.slice(1)} Section`;
+    // const sectionTitle = `New ${type.charAt(0).toUpperCase() + type.slice(1)} Section`;
+    const sectionTitle = SectionManager.getRandomTitle(type);
     
     // Determine order based on insert position
     let order = this.sectionData.length + 1;

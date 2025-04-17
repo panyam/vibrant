@@ -66,6 +66,9 @@ export class Section {
     this.llmButton = element.querySelector('.section-ai');
     
     this.bindEvents();
+    if (this.titleElement) {
+      this.titleElement.textContent = this.data.title;
+    }
     this.initializeContent();
   }
   
