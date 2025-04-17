@@ -4,10 +4,10 @@
 
 {{ define "SectionsList" }}
 <div id="sections-wrapper" class="space-y-6">
-    <!-- Section template that will be cloned by JavaScript -->
-    {{ range .Sections }}
+    <!-- Always include the section template for JavaScript to use -->
+    <div style="display: none; position: absolute; visibility: hidden;" aria-hidden="true">
       {{ template "Section" . }}
-    {{ end }}
+    </div>
     
     <!-- Empty State - Shown when no sections exist -->
     {{ if .Sections }}

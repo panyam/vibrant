@@ -51,6 +51,13 @@ export class ThemeManager {
         if (!savedTheme) return ThemeManager.SYSTEM;
         return savedTheme;
     }
+
+    /**
+     * Initialize the ThemeManager
+     */
+    public static init(): ThemeManager {
+        return new ThemeManager ();
+    }
 }
 
 // Initialize on page load

@@ -19,9 +19,11 @@
             </button>
             
             <!-- Modal content will be populated by one of these templates -->
+           <div style="display: none">
             {{ template "LlmDialog" . }}
             {{ template "LlmResults" . }}
             {{ template "SectionTypeSelector" . }}
+           </div>
         </div>
     </div>
 </div>
