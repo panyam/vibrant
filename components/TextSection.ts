@@ -1,10 +1,18 @@
 // components/TextSection.ts
 
 import { BaseSection } from './BaseSection';
-import { SectionData, SectionCallbacks } from './Section'; // Or move interfaces if needed
-import { TextContent } from './types';
+import { SectionData, SectionCallbacks, TextContent } from './types';
+
+// Import TinyMCE core, theme, icons, and model
+import tinymce, { Editor } from 'tinymce/tinymce';
+import 'tinymce/themes/silver/theme';
+import 'tinymce/icons/default/icons';
+import 'tinymce/models/dom/model';
+
 
 export class TextSection extends BaseSection {
+
+    private editorInstance: Editor | null = null;
 
     constructor(data: SectionData, element: HTMLElement, callbacks: SectionCallbacks = {}) {
         super(data, element, callbacks);
@@ -13,10 +21,9 @@ export class TextSection extends BaseSection {
     protected populateViewContent(): void {
         const viewContent = this.contentContainer?.querySelector('.section-view-content');
         if (viewContent) {
-            // Use loaded content if available (ensure it's treated as TextContent)
             const initialContent = (typeof this.data.content === 'string' && this.data.content.length > 0)
                 ? this.data.content
-                : '<p class="text-gray-400 dark:text-gray-500 italic">Click to add content...</p>'; // Placeholder if empty
+                : '<p class="text-gray-400 dark:text-gray-500 italic">Click to add content...</p>';
             viewContent.innerHTML = initialContent;
         } else {
             console.warn(`View content area not found for text section ${this.data.id}`);
@@ -24,28 +31,62 @@ export class TextSection extends BaseSection {
     }
 
     protected populateEditContent(): void {
-        const editorContainer = this.contentContainer?.querySelector('.text-editor-container');
-        if (editorContainer instanceof HTMLElement) { // Check if it's an element
-             // Use loaded content if available
+        const editorTarget = this.contentContainer?.querySelector('.text-editor-target');
+        if (editorTarget instanceof HTMLElement) {
             const initialContent = (typeof this.data.content === 'string') ? this.data.content : '';
-            editorContainer.innerHTML = initialContent;
-            // Optional: Focus the editor immediately
-            editorContainer.focus();
+            const isDarkMode = document.documentElement.classList.contains('dark');
+
+            // Base path for TinyMCE assets *as served by the static server*
+            // This MUST match webpack's output.publicPath
+            const tinyMCEPublicPath = '/static/js/gen/'; // Path relative to domain root
+
+            tinymce.init({
+                target: editorTarget,
+                plugins: 'autolink lists link image charmap preview anchor searchreplace visualblocks code fullscreen insertdatetime media table paste help wordcount autoresize',
+                toolbar: 'undo redo | formatselect | bold italic backcolor | \
+                          alignleft aligncenter alignright alignjustify | \
+                          bullist numlist outdent indent | removeformat | help',
+                content_style: 'body { font-family:Helvetica,Arial,sans-serif; font-size:14px }',
+                height: 300,
+                menubar: false,
+                statusbar: false,
+                autoresize_bottom_margin: 10,
+                autoresize_min_height: 200,
+
+                // ** Paths for self-hosting **
+                // Ensure these paths correctly point to where CopyPlugin placed the assets,
+                // relative to the domain root, using the publicPath.
+                skin_url: `${tinyMCEPublicPath}skins/ui/${isDarkMode ? 'oxide-dark' : 'oxide'}`,
+                content_css: `${tinyMCEPublicPath}skins/content/${isDarkMode ? 'dark' : 'default'}/content.min.css`,
+
+                license_key: 'gpl',
+
+                setup: (editor: Editor) => {
+                    editor.on('init', () => {
+                        editor.setContent(initialContent || '');
+                        this.editorInstance = editor;
+                        editor.focus();
+                        console.log(`TinyMCE initialized for section ${this.data.id} (Self-Hosted)`);
+                    });
+                }
+            }).catch((error: any) => {
+                console.error(`Error initializing TinyMCE for section ${this.data.id}:`, error);
+                editorTarget.innerHTML = `<p class="text-red-500">Error initializing Rich Text Editor.</p>`;
+            });
+
         } else {
-            console.warn(`Edit content area not found for text section ${this.data.id}`);
+            console.warn(`Edit content target area (.text-editor-target) not found for text section ${this.data.id}`);
         }
     }
 
     protected bindViewModeEvents(): void {
         const viewContent = this.contentContainer?.querySelector('.section-view-content');
         if (viewContent) {
-            // Clear previous listener before adding
             viewContent.removeEventListener('click', this.handleViewClick);
             viewContent.addEventListener('click', this.handleViewClick.bind(this));
         }
     }
 
-    // Handler function to ensure 'this' context is correct
     private handleViewClick(): void {
         this.switchToEditMode();
     }
@@ -55,37 +96,104 @@ export class TextSection extends BaseSection {
         const cancelButton = this.contentContainer?.querySelector('.section-edit-cancel');
 
         if (saveButton) {
-            saveButton.addEventListener('click', () => {
-                this.switchToViewMode(true); // Save changes
-            });
+            saveButton.removeEventListener('click', this.handleSaveClick);
+            saveButton.addEventListener('click', this.handleSaveClick.bind(this));
         }
         if (cancelButton) {
-            cancelButton.addEventListener('click', () => {
-                this.switchToViewMode(false); // Discard changes
-            });
+            cancelButton.removeEventListener('click', this.handleCancelClick);
+            cancelButton.addEventListener('click', this.handleCancelClick.bind(this));
         }
-
-        // Optional: Add keydown listeners to the editor container if needed (e.g., Ctrl+S for save)
-        const editorContainer = this.contentContainer?.querySelector('.text-editor-container') as HTMLElement;
-         if (editorContainer) {
-             // Example: Save on Ctrl+Enter (or Cmd+Enter)
-             editorContainer.addEventListener('keydown', (e: KeyboardEvent) => {
-                 if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                     e.preventDefault();
-                     this.switchToViewMode(true);
-                 }
-                 // Could add Escape listener to cancel here too
-                 if (e.key === 'Escape'){
-                    e.preventDefault();
-                    this.switchToViewMode(false);
-                 }
-             });
-         }
     }
 
+    private handleSaveClick(): void {
+        this.switchToViewMode(true);
+    }
+    private handleCancelClick(): void {
+        this.switchToViewMode(false);
+    }
+
+
     protected getContentFromEditMode(): TextContent {
-        const editorContainer = this.contentContainer?.querySelector('.text-editor-container');
-        // Return contenteditable div's innerHTML, or empty string if not found
-        return editorContainer instanceof HTMLElement ? editorContainer.innerHTML : '';
+        if (this.editorInstance && this.editorInstance.initialized) {
+            try {
+                return this.editorInstance.getContent() || '';
+            } catch (error) {
+                console.error(`Error getting content from TinyMCE for section ${this.data.id}:`, error);
+                return typeof this.data.content === 'string' ? this.data.content : '';
+            }
+        }
+        console.warn(`TinyMCE instance not found or not initialized when getting content for section ${this.data.id}.`);
+        return typeof this.data.content === 'string' ? this.data.content : '';
+    }
+
+    public switchToViewMode(saveChanges: boolean): void {
+        let contentToSave: TextContent | undefined = undefined;
+
+        if (this.mode === 'edit') {
+            if (saveChanges && this.editorInstance && this.editorInstance.initialized) {
+                try {
+                    contentToSave = this.editorInstance.getContent() || '';
+                } catch (error) {
+                    console.error(`Error getting content from TinyMCE before destroy for section ${this.data.id}:`, error);
+                }
+            }
+
+            if (this.editorInstance) {
+                try {
+                    console.log(`Attempting to remove TinyMCE instance for ${this.data.id}`);
+                    tinymce.remove(this.editorInstance);
+                    this.editorInstance = null;
+                    console.log(`TinyMCE instance removed for ${this.data.id}`);
+                } catch (error) {
+                    console.error(`Error removing TinyMCE instance for section ${this.data.id}:`, error);
+                    this.editorInstance = null;
+                }
+            }
+        }
+
+        if (this.mode === 'edit' && saveChanges && contentToSave !== undefined) {
+            const newContent = contentToSave;
+            if (newContent !== this.data.content) {
+                this.data.content = newContent;
+                this.callbacks.onContentChange?.(this.data.id, this.data.content);
+                console.log(`Section ${this.data.id} content saved.`);
+            } else {
+                console.log(`Section ${this.data.id} content unchanged.`);
+            }
+        }
+
+        this.mode = 'view';
+        console.log(`Switching ${this.data.id} to view mode.`);
+        if (this.loadTemplate('view')) {
+            this.populateViewContent();
+            this.bindViewModeEvents();
+        } else {
+            console.error("Failed to load view template for section", this.data.id);
+        }
+    }
+
+    public switchToEditMode(): void {
+         if (this.mode === 'edit') {
+            this.editorInstance?.focus();
+            return;
+        }
+
+        if (this.editorInstance) {
+            console.warn(`Found existing editor instance when switching to edit mode for ${this.data.id}. Attempting cleanup.`);
+            try {
+                tinymce.remove(this.editorInstance);
+            } catch (e) { console.error("Error during cleanup remove:", e); }
+            this.editorInstance = null;
+        }
+
+        this.mode = 'edit';
+        console.log(`Switching ${this.data.id} to edit mode.`);
+        if (this.loadTemplate('edit')) {
+            this.populateEditContent(); // This will initialize TinyMCE
+            this.bindEditModeEvents();
+        } else {
+             console.error("Failed to load edit template for section", this.data.id);
+             this.mode = 'view'; // Revert mode if template fails
+        }
     }
 }

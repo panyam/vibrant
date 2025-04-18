@@ -130,7 +130,7 @@
   <div data-template-id="text-section-view">
     <!-- Root element takes full space of its container -->
     <div
-      class="w-full h-full prose dark:prose-invert section-view-content cursor-pointer"
+      class="w-full h-full prose dark:prose-invert max-w-none section-view-content cursor-pointer"
       title="Click to edit"
     >
       <!-- Actual text content will be injected here by TextSection.ts -->
@@ -141,16 +141,16 @@
   <div data-template-id="text-section-edit">
     <!-- Root element takes full space and arranges children vertically -->
     <div class="w-full h-full flex flex-col section-edit-form">
-      <!-- Editor area grows to fill available space -->
+      <!-- Tinymce editor target -->
       <div
-        class="text-editor-container flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded min-h-[150px]"
-        contenteditable="true"
+        class="text-editor-target flex-grow min-h-[200px]"
         aria-label="Section text content"
       >
-        <!-- Initial content will be populated by TextSection.ts -->
+        <!-- TinyMCE will initialize here, replacing this comment -->
+        <!-- Keep min-h for initial sizing before editor loads -->
       </div>
       <!-- Edit controls fixed at the bottom -->
-      <div class="edit-controls mt-2 text-right space-x-2">
+      <div class="edit-controls mt-2 text-right space-x-2 flex-shrink-0">
         <button
           type="button"
           class="section-edit-cancel px-3 py-1 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"

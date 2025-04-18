@@ -38,6 +38,9 @@ importers:
       notations:
         specifier: ../../../typescript/notations
         version: link:../../../typescript/notations
+      tinymce:
+        specifier: ^7.8.0
+        version: 7.8.0
       tlex:
         specifier: '*'
         version: 0.0.73
@@ -4767,6 +4770,9 @@ packages:
   timers-browserify@1.4.2:
     resolution: {integrity: sha512-PIxwAupJZiYU4JmVZYwXp9FKsHMXb5h0ZEFyuXTAn8WLHOlcij+FEcbrvDsom1o5dr1YggEtFbECvGCW2sT53Q==}
     engines: {node: '>=0.6.0'}
+
+  tinymce@7.8.0:
+    resolution: {integrity: sha512-MUER5MWV9mkOB4expgbWknh/C5ZJvOXQlMVSx4tJxTuYtcUCDB6bMZ34fWNOIc8LvrnXmGHGj0eGQuxjQyRgrA==}
 
   tldts-core@6.1.86:
     resolution: {integrity: sha512-Je6p7pkk+KMzMv2XXKmAE3McmolOQFdxkKw0R8EYNr7sELW46JqnNeTX8ybPiQgvg1ymCoF8LXs5fzFaZvJPTA==}
@@ -10904,6 +10910,8 @@ snapshots:
   timers-browserify@1.4.2:
     dependencies:
       process: 0.11.10
+
+  tinymce@7.8.0: {}
 
   tldts-core@6.1.86: {}
 

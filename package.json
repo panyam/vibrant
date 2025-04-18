@@ -29,6 +29,7 @@
     "golden-layout": "^2.6.0",
     "markdown-it": "*",
     "notations": "../../../typescript/notations",
+    "tinymce": "^7.8.0",
     "tlex": "*"
   },
   "devDependencies": {
