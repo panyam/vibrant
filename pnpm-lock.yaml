@@ -35,9 +35,9 @@ importers:
       markdown-it:
         specifier: '*'
         version: 14.1.0
-      notations:
-        specifier: ../../../typescript/notations
-        version: link:../../../typescript/notations
+      paste:
+        specifier: link:tinymce/plugins/paste
+        version: link:tinymce/plugins/paste
       tinymce:
         specifier: ^7.8.0
         version: 7.8.0

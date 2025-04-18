@@ -1,22 +1,22 @@
 {
-  "name": "notationfe",
+  "name": "viberunnerfe",
   "version": "0.0.1",
   "author": "Sriram Panyam",
   "description": "coding no more",
-  "homepage": "https://github.com/panyam/notation#readme",
+  "homepage": "https://github.com/panyam/viberunner#readme",
   "license": "ISC",
   "main": "./dist/index.js",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/panyam/notation.git"
+    "url": "git+https://github.com/panyam/viberunner.git"
   },
   "keywords": [
-    "notation",
+    "viberunner",
     "music",
     "carnatic"
   ],
   "bugs": {
-    "url": "https://github.com/panyam/notation/issues"
+    "url": "https://github.com/panyam/viberunner/issues"
   },
   "dependencies": {
     "@panyam/tsutils": "*",
@@ -28,7 +28,7 @@
     "galore": "*",
     "golden-layout": "^2.6.0",
     "markdown-it": "*",
-    "notations": "../../../typescript/notations",
+    "paste": "link:tinymce/plugins/paste",
     "tinymce": "^7.8.0",
     "tlex": "*"
   },
