@@ -22,6 +22,9 @@ export class TableOfContents {
 
     private currentTocItems: TocItemInfo[] = [];
     private onAddSectionClick: () => void; // Callback to trigger adding a section
+    private backdropElement: HTMLElement | null; // Add backdrop element property
+    private isOpen: boolean = false; // State for mobile drawer
+
 
     constructor(options: { onAddSectionClick: () => void }) {
         this.onAddSectionClick = options.onAddSectionClick;
@@ -32,9 +35,11 @@ export class TableOfContents {
         this.addSectionButtonElement = document.getElementById('add-section-btn');
         this.closeSidebarButtonElement = document.getElementById('close-sidebar');
         // Assuming the sidebar container has the '.md:w-64' class structure from index.html
-        this.sidebarElement = document.querySelector('.w-full.md\\:w-64');
+        this.sidebarElement = document.getElementById('toc-sidebar'); // Use the new ID
+        this.backdropElement = document.getElementById('sidebar-backdrop'); // Find backdrop
 
-        if (!this.tocListElement || !this.tocItemTemplateElement || !this.addSectionButtonElement || !this.closeSidebarButtonElement || !this.sidebarElement) {
+
+        if (!this.sidebarElement || !this.backdropElement || !this.tocListElement || !this.tocItemTemplateElement || !this.addSectionButtonElement || !this.closeSidebarButtonElement || !this.sidebarElement) {
             console.error("TableOfContents: Could not find all required DOM elements. Check IDs and selectors.");
             // Optionally throw an error or disable functionality
         }
@@ -46,29 +51,23 @@ export class TableOfContents {
     private bindEvents(): void {
         // Use optional chaining in case elements weren't found
         this.addSectionButtonElement?.addEventListener('click', this.handleAddSectionClick.bind(this));
-        this.closeSidebarButtonElement?.addEventListener('click', this.handleCloseSidebarClick.bind(this));
+        this.closeSidebarButtonElement?.addEventListener('click', this.closeDrawer.bind(this));
+        this.backdropElement?.addEventListener('click', this.closeDrawer.bind(this));
+
+        // Add listener for Escape key to close drawer
+        document.addEventListener('keydown', (e) => {
+             if (e.key === 'Escape' && this.isOpen) {
+                 this.closeDrawer();
+             }
+         });
     }
 
     /** Handles the click on the "Add New Section" button. */
     private handleAddSectionClick(): void {
         console.log("TOC: Add Section button clicked.");
         this.onAddSectionClick(); // Trigger the callback provided during instantiation
-        // Optionally close sidebar on mobile after clicking add
-        if (this.isMobileLayout()) {
-            this.hideSidebar();
-        }
-    }
-
-    /** Handles the click on the "Close Sidebar" button (mobile only). */
-    private handleCloseSidebarClick(): void {
-        console.log("TOC: Close Sidebar button clicked.");
-        this.hideSidebar();
-    }
-
-    /** Hides the sidebar element. */
-    private hideSidebar(): void {
-        this.sidebarElement?.classList.add('hidden');
-        this.sidebarElement?.classList.remove('block'); // Ensure responsive classes are toggled correctly
+        // Close drawer after clicking add
+        this.closeDrawer();
     }
 
     /** Checks if the application is likely in a mobile layout. */
@@ -125,6 +124,47 @@ export class TableOfContents {
         });
     }
 
+    /** Opens the mobile drawer */
+    public openDrawer(): void {
+        if (!this.sidebarElement || !this.backdropElement || this.isOpen) return;
+        console.log("TOC: Opening drawer");
+        // Apply classes to show sidebar and backdrop with transitions
+        this.sidebarElement.classList.remove('-translate-x-full');
+        this.backdropElement.classList.remove('hidden');
+        // Use setTimeout to allow display change before opacity transition starts
+        setTimeout(() => {
+           this.backdropElement?.classList.remove('opacity-0');
+        }, 10);
+        this.isOpen = true;
+        // Optional: Prevent body scrolling when drawer is open
+        document.body.style.overflow = 'hidden';
+    }
+
+    /** Closes the mobile drawer */
+    public closeDrawer(): void {
+        if (!this.sidebarElement || !this.backdropElement || !this.isOpen) return;
+        console.log("TOC: Closing drawer");
+         // Apply classes to hide sidebar and backdrop with transitions
+        this.sidebarElement.classList.add('-translate-x-full');
+        this.backdropElement.classList.add('opacity-0');
+        // Hide backdrop completely after transition
+        setTimeout(() => {
+            this.backdropElement?.classList.add('hidden');
+        }, 300); // Match transition duration
+        this.isOpen = false;
+        // Restore body scrolling
+         document.body.style.overflow = '';
+    }
+
+    /** Toggles the mobile drawer state */
+    public toggleDrawer(): void {
+        if (this.isOpen) {
+            this.closeDrawer();
+        } else {
+            this.openDrawer();
+        }
+    }
+
     /**
      * Handles clicks on individual TOC links.
      * Scrolls to the section and handles sidebar visibility on mobile.
@@ -140,9 +180,9 @@ export class TableOfContents {
         }
 
         // Close sidebar only if in mobile layout
-        if (this.isMobileLayout()) {
-            this.hideSidebar();
-        }
+        // if (this.isMobileLayout()) {
+            this.closeDrawer();
+        // }
     }
 
     /**

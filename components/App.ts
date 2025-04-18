@@ -69,16 +69,8 @@ class LeetCoachApp {
         // Note: Close button is now handled INSIDE TableOfContents.ts
         if (mobileMenuButton && sidebar) {
             mobileMenuButton.addEventListener('click', () => {
-                // Toggle visibility by adding/removing 'hidden' class
-                sidebar.classList.toggle('hidden');
-                // Optionally add 'block' if needed for initial display toggle,
-                // but Tailwind's responsive classes usually handle this better.
-                // Ensure 'block' is removed if 'hidden' is added.
-                if (!sidebar.classList.contains('hidden')) {
-                    sidebar.classList.add('block'); // Make sure it's display: block when shown
-                } else {
-                    sidebar.classList.remove('block');
-                }
+               // Tell the TOC component to handle opening
+               this.tableOfContents?.toggleDrawer(); // Or openDrawer() if toggle preferred
             });
         }
 
