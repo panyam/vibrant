@@ -16,7 +16,7 @@ export interface TocItemInfo {
 export class TableOfContents {
     private tocListElement: HTMLElement | null;
     private tocItemTemplateElement: HTMLElement | null;
-    private addSectionButtonElement: HTMLElement | null;
+    private addSectionHeaderButtonElement: HTMLElement | null;
     private closeSidebarButtonElement: HTMLElement | null;
     private sidebarElement: HTMLElement | null; // Reference to the sidebar container itself
 
@@ -32,14 +32,14 @@ export class TableOfContents {
         // Find elements within the main document structure related to TOC
         this.tocListElement = document.getElementById('toc-list');
         this.tocItemTemplateElement = document.querySelector('.toc-item-template');
-        this.addSectionButtonElement = document.getElementById('add-section-btn');
+        this.addSectionHeaderButtonElement = document.getElementById('add-section-btn-header'); // Use new ID
         this.closeSidebarButtonElement = document.getElementById('close-sidebar');
         // Assuming the sidebar container has the '.md:w-64' class structure from index.html
         this.sidebarElement = document.getElementById('toc-sidebar'); // Use the new ID
         this.backdropElement = document.getElementById('sidebar-backdrop'); // Find backdrop
 
 
-        if (!this.sidebarElement || !this.backdropElement || !this.tocListElement || !this.tocItemTemplateElement || !this.addSectionButtonElement || !this.closeSidebarButtonElement || !this.sidebarElement) {
+        if (!this.sidebarElement || !this.backdropElement || !this.tocListElement || !this.tocItemTemplateElement || !this.addSectionHeaderButtonElement || !this.closeSidebarButtonElement || !this.sidebarElement) {
             console.error("TableOfContents: Could not find all required DOM elements. Check IDs and selectors.");
             // Optionally throw an error or disable functionality
         }
@@ -50,7 +50,7 @@ export class TableOfContents {
     /** Binds event listeners for TOC controls. */
     private bindEvents(): void {
         // Use optional chaining in case elements weren't found
-        this.addSectionButtonElement?.addEventListener('click', this.handleAddSectionClick.bind(this));
+        this.addSectionHeaderButtonElement?.addEventListener('click', this.handleAddSectionClick.bind(this));
         this.closeSidebarButtonElement?.addEventListener('click', this.closeDrawer.bind(this));
         this.backdropElement?.addEventListener('click', this.closeDrawer.bind(this));
 
@@ -67,13 +67,9 @@ export class TableOfContents {
         console.log("TOC: Add Section button clicked.");
         this.onAddSectionClick(); // Trigger the callback provided during instantiation
         // Close drawer after clicking add
-        this.closeDrawer();
-    }
-
-    /** Checks if the application is likely in a mobile layout. */
-    private isMobileLayout(): boolean {
-        const mobileMenuButton = document.getElementById('mobile-menu-button');
-        return mobileMenuButton ? mobileMenuButton.offsetParent !== null : false;
+        if (this.isOpen) {
+          this.closeDrawer();
+        }
     }
 
     /**
@@ -180,9 +176,7 @@ export class TableOfContents {
         }
 
         // Close sidebar only if in mobile layout
-        // if (this.isMobileLayout()) {
-            this.closeDrawer();
-        // }
+        this.closeDrawer();
     }
 
     /**
