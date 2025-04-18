@@ -19,7 +19,9 @@ export class ToastManager {
      * Private constructor for singleton pattern
      */
     private constructor() {
-        this.container = document.querySelector('.fixed.bottom-4.left-4.z-50');
+        // this.container = document.querySelector('.fixed.bottom-4.left-4.z-50');
+        // Select the container using its ID from index.html
+        this.container = document.getElementById('toast-container');
         this.template = document.getElementById('toast-template');
     }
 
