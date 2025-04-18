@@ -42,6 +42,23 @@ export interface PlotDocumentSection extends BaseDocumentSection {
   content: PlotContent; // Placeholder content for now
 }
 
+export interface SectionData {
+  id: string;
+  type: SectionType;
+  title: string;
+  content: TextContent | DrawingContent | PlotContent; // Use specific types
+  order: number;
+}
+
+export interface SectionCallbacks {
+  onDelete?: (sectionId: string) => void;
+  onMoveUp?: (sectionId: string) => void;
+  onMoveDown?: (sectionId: string) => void;
+  onTitleChange?: (sectionId: string, newTitle: string) => void;
+  // Ensure content type matches SectionData['content']
+  onContentChange?: (sectionId: string, newContent: SectionData['content']) => void;
+}
+
 export type DocumentSection = TextDocumentSection | DrawingDocumentSection | PlotDocumentSection;
 
 export interface LeetCoachDocument {

@@ -66,6 +66,11 @@ export abstract class BaseSection {
         this.initializeSectionDisplay(); // Load initial view mode template
     }
 
+    /** Removes the section's root element from the DOM */
+    public removeElement(): void {
+      this.element.remove();
+    }
+
     /** Updates the displayed title in the section header */
     protected updateDisplayTitle(): void {
         if (this.titleElement) {
