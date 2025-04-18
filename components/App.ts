@@ -5,7 +5,8 @@ import { DocumentTitle } from './DocumentTitle';
 import { Modal } from './Modal';
 import { SectionManager } from './SectionManager';
 import { ToastManager } from './ToastManager'; // We'll create this next
-import { LeetCoachDocument, DocumentSection, DocumentMetadata } from './types'; // Import the types
+import { LeetCoachDocument, DocumentSection, DocumentMetadata, TextDocumentSection, DrawingDocumentSection } from './types'; // Import the types
+import { DOCUMENT } from "./samples";
 
 /**
  * Main application initialization
@@ -91,27 +92,58 @@ class LeetCoachApp {
         }
     }
 
+     /**
+      * Load document data into the components
+      */
+     loadDocument(doc: LeetCoachDocument): void {
+         console.log("Loading document:", doc.metadata.id);
+         if (this.documentTitle) {
+             this.documentTitle.setTitle(doc.title); // Load title
+         }
+         if (this.sectionManager) {
+             this.sectionManager.loadSections(doc.sections); // Load sections
+         }
+         // Note: TOC is updated by sectionManager.loadSections
+     }
+
     /**
      * Save document
      */
     private saveDocument(): void {
-        // Placeholder for save functionality
-        const timestamp = new Date();
-        const hours = timestamp.getHours();
-        const minutes = timestamp.getMinutes();
-        const ampm = hours >= 12 ? 'PM' : 'AM';
-        const formattedHours = hours % 12 || 12;
-        const formattedMinutes = minutes < 10 ? `0${minutes}` : minutes;
-        
-        // Update timestamp
-        const lastSavedElement = document.getElementById('last-saved-time');
-        if (lastSavedElement) {
-            lastSavedElement.textContent = `Last saved: Today at ${formattedHours}:${formattedMinutes} ${ampm}`;
+        console.log("Attempting to save document...");
+
+        if (!this.documentTitle || !this.sectionManager) {
+            console.error("Cannot save: Core components not initialized.");
+            this.toastManager?.showToast('Save Failed', 'Could not save document.', 'error');
+            return;
         }
-        
-        // Show success toast
-        if (this.toastManager) {
-            this.toastManager.showToast('Document saved', 'Your document has been saved successfully.', 'success');
+
+        const currentTimestamp = new Date().toISOString();
+
+        // 1. Assemble the LeetCoachDocument object
+        const documentData: LeetCoachDocument = {
+            metadata: {
+                id: "doc-placeholder-uuid", // Replace with actual ID generation/retrieval later
+                schemaVersion: "1.0",
+                lastSavedAt: currentTimestamp
+            },
+            title: this.documentTitle.getTitle(),
+            sections: this.sectionManager.getDocumentSections()
+        };
+
+        // 2. Log the JSON representation to the console
+        try {
+            const jsonString = JSON.stringify(documentData, null, 2); // Pretty print
+            console.log("--- LeetCoach Document State (JSON) ---");
+            console.log(jsonString);
+            console.log("---------------------------------------");
+            if (this.toastManager) {
+              this.toastManager?.showToast('Document saved successfully...', 'success')
+            }
+        } catch (error) {
+            console.error("Error serializing document data:", error);
+            this.toastManager?.showToast('Save Error', 'Could not prepare data for saving.', 'error');
+            return;
         }
     }
 
@@ -140,5 +172,6 @@ class LeetCoachApp {
 
 // Initialize the application when the DOM is fully loaded
 document.addEventListener('DOMContentLoaded', () => {
-    LeetCoachApp.init();
+    const lc = LeetCoachApp.init();
+    lc.loadDocument(DOCUMENT); // Load the sample document on init
 });

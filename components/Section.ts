@@ -2,12 +2,12 @@
 
 import { Modal } from './Modal';
 
-import { DocumentSection, TextContent, DrawingContent, PlotContent } from './types'; // Import the types
+import { SectionType, DocumentSection, TextContent, DrawingContent, PlotContent } from './types'; // Import the types
 
 /**
  * Section types
  */
-export type SectionType = 'text' | 'drawing' | 'plot';
+// export type SectionType = 'text' | 'drawing' | 'plot';
 
 
 
@@ -18,7 +18,7 @@ export interface SectionData {
   id: string;
   type: SectionType;
   title: string;
-  content: string;
+  content: string | DrawingContent | PlotContent;
   order: number;
 }
 
@@ -192,14 +192,17 @@ export class Section {
     if (!this.contentElement) return;
     
     // Create editable content area
-    const textArea = document.createElement('div');
-    textArea.className = 'min-h-[100px] border border-gray-200 dark:border-gray-700 rounded p-4 prose dark:prose-invert max-w-none';
-    textArea.setAttribute('contenteditable', 'true');
-    textArea.innerHTML = this.data.content || '<p>Click to start editing...</p>';
-    
+     const contentDiv = document.createElement('div');
+     contentDiv.className = 'min-h-[100px] border border-gray-200 dark:border-gray-700 rounded p-4 prose dark:prose-invert max-w-none';
+     contentDiv.setAttribute('contenteditable', 'true');
+     
+     // Use loaded content if available (ensure it's treated as TextContent)
+     const initialContent = (typeof this.data.content === 'string' && this.data.content.length > 0) ? this.data.content : '<p>Click to start editing...</p>';
+     contentDiv.innerHTML = initialContent;
+ 
     // Add content change event
-    textArea.addEventListener('blur', () => {
-      const newContent = textArea.innerHTML;
+    contentDiv.addEventListener('blur', () => {
+      const newContent = contentDiv.innerHTML;
       if (newContent !== this.data.content) {
         this.data.content = newContent;
         if (this.callbacks.onContentChange) {
@@ -209,7 +212,7 @@ export class Section {
     });
     
     // Add to content element
-    this.contentElement.appendChild(textArea);
+    this.contentElement.appendChild(contentDiv);
   }
   
   /**
@@ -218,10 +221,11 @@ export class Section {
   private initializeDrawingContent(): void {
     if (!this.contentElement) return;
     
+    const content = this.data.content as DrawingContent; // Assume content matches type
     const drawingArea = document.createElement('div');
     drawingArea.className = 'min-h-[300px] border border-gray-200 dark:border-gray-700 rounded p-4 flex items-center justify-center';
-    drawingArea.innerHTML = '<p class="text-gray-400 dark:text-gray-500">Drawing tools will be available soon</p>';
-    
+    // Use loaded data if available, otherwise placeholder
+    drawingArea.innerHTML = content?.data ? `<pre class="text-xs">${JSON.stringify(content.data, null, 2)}</pre>` : '<p class="text-gray-400 dark:text-gray-500">Drawing Area (Placeholder)</p>';
     this.contentElement.appendChild(drawingArea);
   }
   
@@ -231,9 +235,11 @@ export class Section {
   private initializePlotContent(): void {
     if (!this.contentElement) return;
     
+    const content = this.data.content as PlotContent; // Assume content matches type
     const plotArea = document.createElement('div');
     plotArea.className = 'min-h-[300px] border border-gray-200 dark:border-gray-700 rounded p-4 flex items-center justify-center';
-    plotArea.innerHTML = '<p class="text-gray-400 dark:text-gray-500">Chart tools will be available soon</p>';
+    // Use loaded data if available, otherwise placeholder
+    plotArea.innerHTML = content?.data ? `<pre class="text-xs">${JSON.stringify(content.data, null, 2)}</pre>` : '<p class="text-gray-400 dark:text-gray-500">Plot Area (Placeholder)</p>';
     
     this.contentElement.appendChild(plotArea);
   }
@@ -385,7 +391,7 @@ export class Section {
     switch (this.data.type) {
         case 'text':
             // Ensure content is up-to-date if user didn't blur
-            const textArea = this.contentElement?.querySelector('div[contenteditable="true"]');
+            const textArea = this.contentElement?.querySelector('div[contenteditable="true"]'); // More specific selector if needed
             const currentContent = textArea ? textArea.innerHTML : this.data.content;
             return { ...baseData, type: 'text', content: currentContent as TextContent };
         case 'drawing':

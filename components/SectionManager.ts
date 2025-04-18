@@ -1,8 +1,8 @@
 // components/SectionManager.ts
 
 import { Modal } from './Modal';
-import { Section, SectionData, SectionType } from './Section';
-import { DocumentSection } from './types'; // Import the types
+import { Section, SectionData } from './Section';
+import { DocumentSection, SectionType, TextContent, DrawingContent, PlotContent } from './types'; // Import the types
 
 
 /**
@@ -137,12 +137,31 @@ export class SectionManager {
   /**
    * Create a new section
    */
-  private createSection(type: SectionType, insertAfterId: string | null = null): void {
+  private createSection(type: SectionType, insertAfterId: string | null = null, title?: string, id?: string, content?: string | DrawingContent | PlotContent, orderOverride?: number): void {
     if (!this.sectionsContainer || !this.sectionTemplate) return;
     
     // Create section data
-    const sectionId = `section-${this.nextSectionId++}`;
-    // const sectionTitle = `New ${type.charAt(0).toUpperCase() + type.slice(1)} Section`;
+     const sectionId = id || `section-${this.nextSectionId++}`; // Use provided ID or generate
+     let sectionOrder = orderOverride ?? this.sectionData.length + 1; // Use provided order or calculate
+ 
+     // --- Logic for inserting at specific position (only applies if orderOverride is not set) ---
+     // Determine order based on insert position
+     // let order = this.sectionData.length + 1; // Moved calculation above
+     if (orderOverride === undefined && insertAfterId) {
+         const insertAfterIndex = this.sectionData.findIndex(s => s.id === insertAfterId);
+         if (insertAfterIndex !== -1) {
+             sectionOrder = this.sectionData[insertAfterIndex].order + 1;
+ 
+             // Increment order of all sections after this one
+             this.sectionData.forEach(section => {
+                 if (section.order >= sectionOrder) {
+                     section.order++;
+                 }
+             });
+         }
+     }
+     // --- End insertion logic ---
+
     const sectionTitle = SectionManager.getRandomTitle(type);
     
     // Determine order based on insert position
@@ -166,8 +185,8 @@ export class SectionManager {
       id: sectionId,
       type,
       title: sectionTitle,
-      content: '',
-      order
+      content: content || '', // Use provided content or default
+      order: sectionOrder
     };
     
     // Add to sections array
@@ -186,14 +205,16 @@ export class SectionManager {
     // Set section number
     const sectionNumber = sectionEl.querySelector('.section-number');
     if (sectionNumber) {
-      sectionNumber.textContent = `${order}.`;
+      sectionNumber.textContent = `${sectionOrder}.`;
     }
     
     // Add to container
     this.sectionsContainer.appendChild(sectionEl);
     // Add to container at the correct position
-    if (insertAfterId) {
-      const insertAfterEl = document.getElementById(insertAfterId);
+    // If loading (orderOverride is set), simple append is fine as reorder happens later.
+    // Otherwise, use insertion logic.
+    if (orderOverride === undefined && insertAfterId) {
+      const insertAfterEl = this.sectionsContainer.querySelector(`[data-section-id="${insertAfterId}"]`);
       if (insertAfterEl && insertAfterEl.nextElementSibling) {
         this.sectionsContainer.insertBefore(sectionEl, insertAfterEl.nextElementSibling);
       } else {
@@ -215,8 +236,10 @@ export class SectionManager {
     // Add to sections map
     this.sections.set(sectionId, section);
     
-    // Update section numbers
-    this.updateSectionNumbers();
+    // Don't update numbers/TOC here if loading multiple sections, do it once at the end
+    if (orderOverride === undefined) {
+        this.updateSectionNumbers(); // Update numbers if adding single section
+    }
     
     // Update table of contents
     this.updateTableOfContents();
@@ -224,6 +247,45 @@ export class SectionManager {
     // Handle empty state
     this.handleEmptyState();
   }
+
+ 
+   /**
+    * Loads multiple sections from document data.
+    * Clears existing sections first.
+    */
+   public loadSections(sectionsData: DocumentSection[]): void {
+     if (!this.sectionsContainer) return;
+ 
+     // 1. Clear existing sections
+     this.sectionsContainer.innerHTML = ''; // Clear DOM
+     this.sections.clear(); // Clear map
+     this.sectionData = []; // Clear data array
+     this.nextSectionId = 1; // Reset ID counter (will be updated below)
+ 
+     let maxIdNum = 0;
+ 
+     // 2. Create sections from data (ensure sorted by order first)
+     sectionsData
+         .sort((a, b) => a.order - b.order)
+         .forEach(data => {
+             // Use the core createSection logic, providing all data
+             this.createSection(data.type, null, data.title, data.id, data.content, data.order);
+ 
+             // Track max ID number to set nextSectionId correctly
+             const idNumMatch = data.id.match(/\d+$/);
+             if (idNumMatch) {
+                 maxIdNum = Math.max(maxIdNum, parseInt(idNumMatch[0], 10));
+             }
+         });
+ 
+     // Set nextSectionId higher than any loaded ID
+     this.nextSectionId = maxIdNum + 1;
+ 
+     // 3. Final updates after all sections are loaded
+     this.updateSectionNumbers(); // Renumber correctly based on final order
+     this.updateTableOfContents();
+     this.handleEmptyState();
+   }
 
   /**
    * Delete a section
@@ -325,7 +387,7 @@ export class SectionManager {
       return document.getElementById(data.id);
     }).filter(el => el !== null) as HTMLElement[];
     
-    // Reorder in DOM
+    // Re-append elements to the container in the new order (use ! assumption as check done above)
     orderedSections.forEach(sectionEl => {
       this.sectionsContainer!.appendChild(sectionEl);
     });
@@ -392,7 +454,7 @@ export class SectionManager {
       const link = tocItem.querySelector('a');
       const numberSpan = tocItem.querySelector('.toc-section-number');
       const titleSpan = tocItem.querySelector('.toc-section-title');
-      
+
       if (link) {
         link.setAttribute('href', `#${section.id}`);
       }

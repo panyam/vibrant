@@ -139,6 +139,19 @@ export class DocumentTitle {
         }
     }
 
+     /**
+      * Sets the document title programmatically.
+      * Updates internal state and the displayed H1 element.
+      */
+     public setTitle(newTitle: string): void {
+         if (newTitle && this.titleText) {
+             this.titleText.textContent = newTitle;
+             this.originalTitle = newTitle;
+             document.title = `${newTitle} - LeetCoach`; // Update browser tab title
+             this.updateLastSavedTime(); // Also update timestamp when loading
+         }
+     }
+ 
     /**
      * Get the current title text.
      */
