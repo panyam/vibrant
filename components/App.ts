@@ -4,8 +4,9 @@ import { ThemeManager } from './ThemeManager';
 import { DocumentTitle } from './DocumentTitle';
 import { Modal } from './Modal';
 import { SectionManager } from './SectionManager';
-import { ToastManager } from './ToastManager'; // We'll create this next
-import { LeetCoachDocument, DocumentSection, DocumentMetadata, TextDocumentSection, DrawingDocumentSection } from './types'; // Import the types
+import { ToastManager } from './ToastManager';
+import { TableOfContents } from './TableOfContents'; // Import the new component
+import { LeetCoachDocument, DocumentSection, DocumentMetadata, TextDocumentSection, DrawingDocumentSection } from './types';
 import { DOCUMENT } from "./samples";
 
 /**
@@ -17,161 +18,159 @@ class LeetCoachApp {
     private modal: Modal | null = null;
     private sectionManager: SectionManager | null = null;
     private toastManager: ToastManager | null = null;
+    private tableOfContents: TableOfContents | null = null; // Add property for TOC instance
 
     constructor() {
         this.initializeComponents();
         this.bindEvents();
-        // Other initialization will go here
     }
 
-    /**
-     * Initialize all application components
-     */
+    /** Initialize all application components */
     private initializeComponents(): void {
-        // Initialize in dependency order
         this.themeManager = ThemeManager.init();
         this.modal = Modal.init();
-        this.documentTitle = DocumentTitle.init();
-        this.sectionManager = SectionManager.init();
         this.toastManager = ToastManager.init();
-        
-        // Log initialization
+        this.documentTitle = DocumentTitle.init();
+
+        // Instantiate SectionManager first
+        this.sectionManager = SectionManager.init();
+
+        // Instantiate TableOfContents, passing the callback for adding sections
+        this.tableOfContents = TableOfContents.init({
+            onAddSectionClick: () => {
+                // When TOC add button is clicked, tell SectionManager to open the type selector
+                // Add section at the end (insertAfterId = null)
+                this.sectionManager?.openSectionTypeSelector(null);
+            }
+        });
+
+        // Connect SectionManager to TableOfContents
+        if (this.sectionManager && this.tableOfContents) {
+             this.sectionManager.setTocComponent(this.tableOfContents);
+        }
+
         console.log('LeetCoach application initialized');
     }
 
-    /**
-     * Bind application-level events
-     */
+    /** Bind application-level events */
     private bindEvents(): void {
-        // Theme switcher buttons
+        // --- Theme switcher events (remain the same) ---
         const lightBtn = document.getElementById('light-theme-btn');
         const darkBtn = document.getElementById('dark-theme-btn');
         const systemBtn = document.getElementById('system-theme-btn');
+        if (lightBtn) lightBtn.addEventListener('click', () => ThemeManager.setTheme(ThemeManager.LIGHT));
+        if (darkBtn) darkBtn.addEventListener('click', () => ThemeManager.setTheme(ThemeManager.DARK));
+        if (systemBtn) systemBtn.addEventListener('click', () => ThemeManager.setTheme(ThemeManager.SYSTEM));
 
-        if (lightBtn) {
-            lightBtn.addEventListener('click', () => ThemeManager.setTheme(ThemeManager.LIGHT));
-        }
-        
-        if (darkBtn) {
-            darkBtn.addEventListener('click', () => ThemeManager.setTheme(ThemeManager.DARK));
-        }
-        
-        if (systemBtn) {
-            systemBtn.addEventListener('click', () => ThemeManager.setTheme(ThemeManager.SYSTEM));
-        }
 
-        // Mobile menu toggle
+        // --- Mobile menu toggle (remain the same) ---
         const mobileMenuButton = document.getElementById('mobile-menu-button');
-        const sidebar = document.querySelector('.md\\:w-64');
-        const closeSidebarButton = document.getElementById('close-sidebar');
-        
+        const sidebar = document.querySelector('.md\\:w-64'); // Correct selector for the sidebar container
+        // Note: Close button is now handled INSIDE TableOfContents.ts
         if (mobileMenuButton && sidebar) {
             mobileMenuButton.addEventListener('click', () => {
+                // Toggle visibility by adding/removing 'hidden' class
                 sidebar.classList.toggle('hidden');
-                sidebar.classList.toggle('block');
-            });
-        }
-        
-        if (closeSidebarButton && sidebar) {
-            closeSidebarButton.addEventListener('click', () => {
-                sidebar.classList.add('hidden');
-                sidebar.classList.remove('block');
+                // Optionally add 'block' if needed for initial display toggle,
+                // but Tailwind's responsive classes usually handle this better.
+                // Ensure 'block' is removed if 'hidden' is added.
+                if (!sidebar.classList.contains('hidden')) {
+                    sidebar.classList.add('block'); // Make sure it's display: block when shown
+                } else {
+                    sidebar.classList.remove('block');
+                }
             });
         }
 
-        // Save button
-        const saveButton = document.querySelector('button.bg-blue-600:not(#llm-submit):not(#llm-apply)');
+
+        // --- Save button (remain the same) ---
+        const saveButton = document.querySelector('header button.bg-blue-600'); // More specific selector
         if (saveButton) {
             saveButton.addEventListener('click', this.saveDocument.bind(this));
         }
 
-        // Export button
-        const exportButton = document.querySelector('button.bg-gray-200');
+
+        // --- Export button (remain the same) ---
+        const exportButton = document.querySelector('header button.bg-gray-200'); // More specific selector
         if (exportButton) {
             exportButton.addEventListener('click', this.exportDocument.bind(this));
         }
     }
 
-     /**
-      * Load document data into the components
-      */
-     loadDocument(doc: LeetCoachDocument): void {
-         console.log("Loading document:", doc.metadata.id);
-         if (this.documentTitle) {
-             this.documentTitle.setTitle(doc.title); // Load title
-         }
-         if (this.sectionManager) {
-             this.sectionManager.loadSections(doc.sections); // Load sections
-         }
-         // Note: TOC is updated by sectionManager.loadSections
-     }
 
-    /**
-     * Save document
-     */
+    /** Load document data into the components */
+    public loadDocument(doc: LeetCoachDocument): void {
+        console.log("Loading document:", doc.metadata.id);
+        if (this.documentTitle) {
+            this.documentTitle.setTitle(doc.title);
+        }
+        if (this.sectionManager) {
+            // loadSections will now also trigger the TOC update via the connected component
+            this.sectionManager.loadSections(doc.sections);
+        } else {
+             console.error("SectionManager not initialized, cannot load document sections.");
+        }
+    }
+
+
+    /** Save document */
     private saveDocument(): void {
         console.log("Attempting to save document...");
 
-        if (!this.documentTitle || !this.sectionManager) {
+        if (!this.documentTitle || !this.sectionManager || !this.toastManager) {
             console.error("Cannot save: Core components not initialized.");
             this.toastManager?.showToast('Save Failed', 'Could not save document.', 'error');
             return;
         }
 
         const currentTimestamp = new Date().toISOString();
-
-        // 1. Assemble the LeetCoachDocument object
         const documentData: LeetCoachDocument = {
             metadata: {
-                id: "doc-placeholder-uuid", // Replace with actual ID generation/retrieval later
+                id: "doc-placeholder-uuid", // Replace with actual ID
                 schemaVersion: "1.0",
                 lastSavedAt: currentTimestamp
             },
             title: this.documentTitle.getTitle(),
-            sections: this.sectionManager.getDocumentSections()
+            sections: this.sectionManager.getDocumentSections() // Get data from manager
         };
 
-        // 2. Log the JSON representation to the console
         try {
-            const jsonString = JSON.stringify(documentData, null, 2); // Pretty print
+            const jsonString = JSON.stringify(documentData, null, 2);
             console.log("--- LeetCoach Document State (JSON) ---");
             console.log(jsonString);
             console.log("---------------------------------------");
-            if (this.toastManager) {
-              this.toastManager?.showToast('Document saved successfully...', 'success')
-            }
+            this.toastManager.showToast('Document Saved', 'Content logged to console.', 'success');
+            // Update last saved time display in DocumentTitle component
+            this.documentTitle.updateLastSavedTime();
+
         } catch (error) {
             console.error("Error serializing document data:", error);
-            this.toastManager?.showToast('Save Error', 'Could not prepare data for saving.', 'error');
-            return;
+            this.toastManager.showToast('Save Error', 'Could not prepare data for saving.', 'error');
         }
     }
 
-    /**
-     * Export document
-     */
+
+    /** Export document (Placeholder) */
     private exportDocument(): void {
-        // Placeholder for export functionality
         if (this.toastManager) {
             this.toastManager.showToast('Export started', 'Your document is being prepared for export.', 'info');
-            
-            // Simulate export process
             setTimeout(() => {
-                this.toastManager?.showToast('Export complete', 'Your document has been exported successfully.', 'success');
+                this.toastManager?.showToast('Export complete', 'Document export simulation finished.', 'success');
             }, 1500);
         }
     }
 
-    /**
-     * Initialize the application
-     */
+
+    /** Initialize the application */
     public static init(): LeetCoachApp {
         return new LeetCoachApp();
     }
 }
 
+
 // Initialize the application when the DOM is fully loaded
 document.addEventListener('DOMContentLoaded', () => {
     const lc = LeetCoachApp.init();
-    lc.loadDocument(DOCUMENT); // Load the sample document on init
+    // Ensure sample document is loaded *after* components are initialized and connected
+    lc.loadDocument(DOCUMENT);
 });

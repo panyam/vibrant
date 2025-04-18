@@ -125,7 +125,7 @@ export class DocumentTitle {
     /**
      * Update the last saved timestamp
      */
-    private updateLastSavedTime(): void {
+    updateLastSavedTime(): void {
         const timestampElement = document.getElementById('last-saved-time');
         if (timestampElement) {
             const now = new Date();
