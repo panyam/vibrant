@@ -85,18 +85,14 @@ export class SectionManager {
         document.addEventListener('click', (e: MouseEvent) => {
             const target = e.target as HTMLElement;
             // Only listen for buttons NOT inside the TOC sidebar
-            const addSectionBtn = target.closest('#create-first-section, .add-section-button:not(#add-section-btn)');
+            const addSectionBtn = target.closest('#create-first-section'); // Only listen for the empty state button here
 
+            // Add buttons within sections are now handled by BaseSection -> onAddSectionRequest callback
             if (addSectionBtn) {
                 e.preventDefault();
                 let insertAfterId: string | null = null;
-                if (addSectionBtn.classList.contains('add-section-button')) {
-                    const sectionEl = addSectionBtn.closest('[data-section-id]');
-                    if (sectionEl) {
-                        insertAfterId = (sectionEl as HTMLElement).dataset.sectionId || null;
-                    }
-                }
-                this.openSectionTypeSelector(insertAfterId);
+                // The #create-first-section button always adds to the end
+                this.openSectionTypeSelector(null, 'after');
             }
         });
 
@@ -114,26 +110,37 @@ export class SectionManager {
                  else if (typeText === 'plot') sectionType = 'plot';
 
                  const modalData = this.modal.getCurrentData();
-                 const insertAfterId = modalData?.insertAfterId || null; // Prefer modal data
+                 const relativeToId = modalData?.relativeToId || null;
+                 const position = modalData?.position || 'after';
 
-                 this.createSection(sectionType, insertAfterId); // Create section
+                 this.createSection(sectionType, relativeToId, position); // Create section
                  this.modal.hide(); // Close modal
              }
          });
     }
 
     /** Open section type selector modal */
-    public openSectionTypeSelector(insertAfterId: string | null = null): void {
-        this.modal.show('section-type-selector', { insertAfterId: insertAfterId || '' });
-        console.log('SectionManager opening section type selector modal', { insertAfterId });
+    public openSectionTypeSelector(relativeToId: string | null, position: 'before' | 'after' = 'after'): void {
+        this.modal.show('section-type-selector', {
+            relativeToId: relativeToId || '',
+            position: position
+        });
+        console.log('SectionManager opening section type selector modal', { relativeToId, position });
     }
 
     /** Create a new section instance based on the type */
     private createSection(
         type: SectionType,
-        insertAfterId: string | null = null,
+        relativeToId: string | null = null,
+        position: 'before' | 'after' = 'after', // Default to 'after' if not specified
         initialData?: Partial<SectionData>
     ): BaseSection | null {
+        // Handle load scenario: initialData is present, relativeToId/position are irrelevant for initial placement logic
+        if (initialData?.order !== undefined) {
+            relativeToId = null; // Ignore relative positioning during load
+            position = 'after'; // Doesn't matter, order is explicit
+        }
+
         // --- Section Data Creation (Simplified) ---
         const sectionId = initialData?.id || `section-${this.nextSectionId++}`;
         let sectionOrder: number;
@@ -143,11 +150,16 @@ export class SectionManager {
              sectionOrder = providedOrder; // Use provided order when loading
         } else {
              // Calculate temporary order for insertion sorting
-             if (insertAfterId) {
-                 const insertAfterIndex = this.sectionData.findIndex(s => s.id === insertAfterId);
-                 sectionOrder = (insertAfterIndex !== -1) ? this.sectionData[insertAfterIndex].order + 0.5 : this.sectionData.length;
+             if (relativeToId) {
+                 const relativeIndex = this.sectionData.findIndex(s => s.id === relativeToId);
+                 if (relativeIndex !== -1) {
+                     const relativeOrder = this.sectionData[relativeIndex].order;
+                     sectionOrder = (position === 'before') ? relativeOrder - 0.5 : relativeOrder + 0.5;
+                 } else {
+                     sectionOrder = this.sectionData.length; // Fallback: append if relative ID not found
+                 }
              } else {
-                 sectionOrder = this.sectionData.length; // Append to end
+                 sectionOrder = this.sectionData.length; // Append to end if no relative ID
              }
         }
 
@@ -169,15 +181,19 @@ export class SectionManager {
         sectionEl.dataset.sectionType = type;
 
         // Insertion logic based purely on data sort later, unless it's a user action
+        // Determine where to insert the new DOM element based on user interaction
         let insertBeforeEl: HTMLElement | null = null;
-        if (providedOrder === undefined && insertAfterId) { // Only calculate DOM position for user adds
-             const insertAfterEl = this.sectionsContainer.querySelector(`[data-section-id="${insertAfterId}"]`);
-             insertBeforeEl = insertAfterEl?.nextElementSibling as HTMLElement | null;
+        if (initialData?.order === undefined && relativeToId) { // Only calculate DOM position for user adds
+            const relativeEl = this.sectionsContainer.querySelector(`[data-section-id="${relativeToId}"]`) as HTMLElement
+            if (relativeEl) {
+                insertBeforeEl = (position === 'before') ? relativeEl : relativeEl.nextElementSibling as HTMLElement | null;
+            }
         }
 
-        if (insertBeforeEl) {
+        // Perform the DOM insertion
+        if (insertBeforeEl) { // Insert before a specific element (handles 'before' and 'after')
             this.sectionsContainer.insertBefore(sectionEl, insertBeforeEl);
-        } else {
+        } else { // Append to the end (handles adding to empty list, loading, or fallback)
              this.sectionsContainer.appendChild(sectionEl); // Append to end if loading or no insert point found
         }
 
@@ -188,7 +204,8 @@ export class SectionManager {
             onMoveUp: this.moveSectionUp.bind(this),
             onMoveDown: this.moveSectionDown.bind(this),
             onTitleChange: this.updateSectionTitle.bind(this),
-            onContentChange: this.updateSectionContent.bind(this)
+            onContentChange: this.updateSectionContent.bind(this),
+            onAddSectionRequest: this.openSectionTypeSelector.bind(this) // New callback handler
         };
         // (Switch statement to create Text/Drawing/PlotSection remains the same)
         switch (type) {
@@ -213,7 +230,7 @@ export class SectionManager {
         this.sectionData.push(sectionData);
 
         // Only renumber/update TOC if it's a single user action, not during bulk load
-        if (providedOrder === undefined) {
+        if (initialData?.order === undefined) {
              this.normalizeOrdersAndRenumber(); // Sort data, set final order, update DOM numbers
              this.triggerTocUpdate();           // Tell TOC to re-render
              this.handleEmptyState();
@@ -244,7 +261,7 @@ export class SectionManager {
         sectionsData
             .sort((a, b) => a.order - b.order) // Sort by order first
             .forEach(data => {
-                const createdSection = this.createSection(data.type, null, data); // Pass order via initialData
+                const createdSection = this.createSection(data.type, null, 'after', data); // Pass order via initialData, position doesn't matter here
                  if (createdSection) {
                      const idNumMatch = data.id.match(/\d+$/);
                      if (idNumMatch) {

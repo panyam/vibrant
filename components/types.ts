@@ -57,6 +57,8 @@ export interface SectionCallbacks {
   onTitleChange?: (sectionId: string, newTitle: string) => void;
   // Ensure content type matches SectionData['content']
   onContentChange?: (sectionId: string, newContent: SectionData['content']) => void;
+  // Callback for requesting section addition
+  onAddSectionRequest?: (relativeToId: string, position: 'before' | 'after') => void;
 }
 
 export type DocumentSection = TextDocumentSection | DrawingDocumentSection | PlotDocumentSection;

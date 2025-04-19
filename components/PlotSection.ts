@@ -1,8 +1,7 @@
 // components/PlotSection.ts
 
 import { BaseSection } from './BaseSection';
-import { SectionData, SectionCallbacks } from './Section'; // Or move interfaces
-import { PlotContent } from './types';
+import { PlotContent, SectionData, SectionCallbacks } from './types'; // Or move interfaces
 
 export class PlotSection extends BaseSection {
 

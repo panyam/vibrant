@@ -2,36 +2,13 @@
 
 import { Modal } from './Modal';
 
-import { SectionType, DocumentSection, TextContent, DrawingContent, PlotContent } from './types'; // Import the types
+import { SectionType, DocumentSection, TextContent, DrawingContent, PlotContent, SectionData, SectionCallbacks } from './types'; // Import the types
 
 /**
  * Section types
  */
 // export type SectionType = 'text' | 'drawing' | 'plot';
 
-
-
-/**
- * Section data interface
- */
-export interface SectionData {
-  id: string;
-  type: SectionType;
-  title: string;
-  content: string | DrawingContent | PlotContent;
-  order: number;
-}
-
-/**
- * Callback interface for section events
- */
-export interface SectionCallbacks {
-  onDelete?: (sectionId: string) => void;
-  onMoveUp?: (sectionId: string) => void;
-  onMoveDown?: (sectionId: string) => void;
-  onTitleChange?: (sectionId: string, newTitle: string) => void;
-  onContentChange?: (sectionId: string, newContent: string) => void;
-}
 
 /**
  * Manages an individual document section

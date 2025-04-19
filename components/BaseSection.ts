@@ -1,8 +1,7 @@
 // components/BaseSection.ts
 
 import { Modal } from './Modal';
-import { SectionData, SectionCallbacks } from './Section'; // Assuming Section.ts still defines these for now, or move them
-import { SectionType, DocumentSection, TextContent, DrawingContent, PlotContent } from './types';
+import { SectionData, SectionType, DocumentSection, TextContent, DrawingContent, PlotContent, SectionCallbacks } from './types';
 
 // --- Placeholders for icons/titles - can be moved/refined ---
 const TEXT_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-full h-full"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" /></svg>`;
@@ -39,6 +38,10 @@ export abstract class BaseSection {
     protected settingsButton: HTMLElement | null;
     protected llmButton: HTMLElement | null;
 
+    protected addBeforeButton: HTMLElement | null;
+    protected addAfterButton: HTMLElement | null; 
+
+
     constructor(data: SectionData, element: HTMLElement, callbacks: SectionCallbacks = {}) {
         this.data = data;
         this.element = element;
@@ -55,6 +58,9 @@ export abstract class BaseSection {
         this.moveDownButton = this.element.querySelector('.section-move-down');
         this.settingsButton = this.element.querySelector('.section-settings');
         this.llmButton = this.element.querySelector('.section-ai');
+        this.addBeforeButton = this.element.querySelector('.section-add-before');
+        this.addAfterButton = this.element.querySelector('.section-add-after');
+
 
         if (!this.contentContainer) {
             console.error(`Section content container not found for section ID: ${this.data.id}`);
@@ -131,6 +137,22 @@ export abstract class BaseSection {
         // LLM button
         if (this.llmButton) {
             this.llmButton.addEventListener('click', this.openLlmDialog.bind(this));
+        }
+
+        // Add Before button
+        if (this.addBeforeButton) {
+            this.addBeforeButton.addEventListener('click', () => {
+                console.log(`Add Before requested for section ${this.data.id}`);
+                this.callbacks.onAddSectionRequest?.(this.data.id, 'before');
+            });
+        }
+
+        // Add After button
+        if (this.addAfterButton) {
+            this.addAfterButton.addEventListener('click', () => {
+                console.log(`Add After requested for section ${this.data.id}`);
+                this.callbacks.onAddSectionRequest?.(this.data.id, 'after');
+            });
         }
     }
 

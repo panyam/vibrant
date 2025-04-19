@@ -1,7 +1,7 @@
 // components/DrawingSection.ts
 
 import { BaseSection } from './BaseSection';
-import { SectionData, SectionCallbacks } from './Section'; // Or move interfaces
+import { SectionData, SectionCallbacks } from './types'; // Or move interfaces
 import { DrawingContent } from './types';
 
 export class DrawingSection extends BaseSection {
