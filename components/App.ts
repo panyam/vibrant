@@ -164,5 +164,5 @@ class LeetCoachApp {
 document.addEventListener('DOMContentLoaded', () => {
     const lc = LeetCoachApp.init();
     // Ensure sample document is loaded *after* components are initialized and connected
-    lc.loadDocument(DOCUMENT);
+    // lc.loadDocument(DOCUMENT);
 });

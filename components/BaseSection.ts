@@ -63,6 +63,8 @@ export abstract class BaseSection {
         this.addBeforeButton = this.element.querySelector('.section-add-before');
         this.addAfterButton = this.element.querySelector('.section-add-after');
         this.fullscreenButton = this.element.querySelector('.section-fullscreen');
+        this.exitFullscreenButton = this.element.querySelector('.section-exit-fullscreen'); // Find it once in constructor
+
 
         if (!this.contentContainer) {
             console.error(`Section content container not found for section ID: ${this.data.id}`);
@@ -75,7 +77,7 @@ export abstract class BaseSection {
          // Fullscreen button is bound dynamically by `enableFullscreen` if called by subclass
      }
  
-     /** Enables the fullscreen button and functionality for this section */
+     /** Enables the fullscreen button functionality for this section */
      protected enableFullscreen(): void {
          if (this.fullscreenButton) {
              this.fullscreenButton.classList.remove('hidden');
@@ -288,8 +290,6 @@ export abstract class BaseSection {
         console.log(`Switching ${this.data.id} to view mode.`);
         if (this.loadTemplate('view')) {
             this.populateViewContent();
-             // Find the exit fullscreen button *after* the view template is loaded
-             this.exitFullscreenButton = this.contentContainer?.querySelector('.section-exit-fullscreen') as HTMLElement | null;
             this.bindViewModeEvents();
         } else {
             console.error("Failed to load view template for section", this.data.id);
@@ -435,20 +435,31 @@ export abstract class BaseSection {
      protected isFullscreen: boolean = false;
  
      protected enterFullscreen(): void {
-         if (this.isFullscreen || !this.contentContainer || !this.sectionHeaderElement) return;
+         // Use this.element as the fullscreen target
+         if (this.isFullscreen || !this.element || !this.exitFullscreenButton) return;
          console.log(`Entering fullscreen for section ${this.data.id}`);
          this.isFullscreen = true;
  
          // Add classes for styling
          // Use specific classes for easier removal and potential customization
-         this.contentContainer.classList.add('lc-fullscreen-content');
+         // Target the main element now
+         this.element.classList.add('lc-section-fullscreen');
+         this.element.classList.add('flex', 'flex-col'); // Ensure header/content stack vertically if needed
+         this.contentContainer?.classList.add('flex-grow', 'overflow-auto'); // Make content area take remaining space and scroll internally
          document.body.classList.add('lc-fullscreen-active');
-         this.sectionHeaderElement.classList.add('hidden'); // Hide header
+ 
+         // Selectively hide header controls
+         this.moveUpButton?.classList.add('hidden');
+         this.moveDownButton?.classList.add('hidden');
+         this.addBeforeButton?.classList.add('hidden');
+         this.addAfterButton?.classList.add('hidden');
+         this.settingsButton?.classList.add('hidden');
+         this.deleteButton?.classList.add('hidden');
+         // Keep: Title, Number, Type Icon, Fullscreen, LLM
          this.exitFullscreenButton?.classList.remove('hidden'); // Show exit button
  
          // Bind exit listeners
          this.exitFullscreenButton?.addEventListener('click', this.exitFullscreen.bind(this), { once: true });
-         document.addEventListener('keydown', this._handleKeyDown.bind(this));
          window.addEventListener('resize', this._handleResize.bind(this));
  
          // Allow content to adjust size *after* container is fullscreen
@@ -457,27 +468,34 @@ export abstract class BaseSection {
          });
      }
  
-     protected exitFullscreen(): void {
-         if (!this.isFullscreen || !this.contentContainer || !this.sectionHeaderElement) return;
-         console.log(`Exiting fullscreen for section ${this.data.id}`);
-         this.isFullscreen = false;
+    protected exitFullscreen(): void {
+      if (!this.isFullscreen || !this.element || !this.exitFullscreenButton) return;
+      console.log(`Exiting fullscreen for section ${this.data.id}`);
+      this.isFullscreen = false;
  
-         // Remove classes
-         this.contentContainer.classList.remove('lc-fullscreen-content');
-         document.body.classList.remove('lc-fullscreen-active');
-         this.sectionHeaderElement.classList.remove('hidden'); // Show header again
-         this.exitFullscreenButton?.classList.add('hidden'); // Hide exit button
+      // Remove classes
+      this.element.classList.remove('lc-section-fullscreen');
+      this.element.classList.remove('flex', 'flex-col');
+      this.contentContainer?.classList.remove('flex-grow', 'overflow-auto');
+      document.body.classList.remove('lc-fullscreen-active');
+      this.exitFullscreenButton?.classList.add('hidden'); // Hide exit button
+
+      // Restore header controls
+      this.moveUpButton?.classList.remove('hidden');
+      this.moveDownButton?.classList.remove('hidden');
+      this.addBeforeButton?.classList.remove('hidden');
+      this.addAfterButton?.classList.remove('hidden');
+      this.settingsButton?.classList.remove('hidden');
+      this.deleteButton?.classList.remove('hidden');
  
-         // Unbind listeners
-         // Note: Click listener on exit button removed itself with { once: true }
-         document.removeEventListener('keydown', this._handleKeyDown.bind(this));
-         window.removeEventListener('resize', this._handleResize.bind(this));
+      // Unbind listeners
+      window.removeEventListener('resize', this._handleResize.bind(this));
  
-         // Allow content to adjust size *after* container is back to normal
-         requestAnimationFrame(() => {
-              this.resizeContentForFullscreen(false); // Notify subclass to resize content
-         });
-     }
+      // Allow content to adjust size *after* container is back to normal
+      requestAnimationFrame(() => {
+        this.resizeContentForFullscreen(false); // Notify subclass to resize content
+      });
+   }
  
      // Bound listener function to ensure 'this' context and allow removal
      private _boundHandleKeyDown = this._handleKeyDown.bind(this);
