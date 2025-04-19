@@ -15,6 +15,7 @@ export class DrawingSection extends BaseSection {
          if (typeof this.data.content !== 'object' || this.data.content === null) {
             this.data.content = { format: 'placeholder_drawing', data: {} };
         }
+        this.enableFullscreen();
     }
 
     protected populateViewContent(): void {
@@ -91,5 +92,16 @@ export class DrawingSection extends BaseSection {
             format: 'placeholder_drawing', // Or the actual format used by your lib
             data: drawingData
         };
+    }
+
+    /** Implement the abstract method from BaseSection */
+    protected resizeContentForFullscreen(isEntering: boolean): void {
+        // This method is crucial for canvas/SVG based drawing tools that don't automatically resize.
+        console.log(`DrawingSection ${this.data.id}: Resizing content for fullscreen=${isEntering}. Triggering drawing library resize.`);
+
+        // --- Placeholder for actual drawing library integration ---
+        // Example: if (this.drawingEditorInstance && typeof this.drawingEditorInstance.resize === 'function') {
+        //     this.drawingEditorInstance.resize(); // Call the library's specific resize/redraw method
+        // }
     }
 }

@@ -37,9 +37,11 @@ export abstract class BaseSection {
     protected moveDownButton: HTMLElement | null;
     protected settingsButton: HTMLElement | null;
     protected llmButton: HTMLElement | null;
-
     protected addBeforeButton: HTMLElement | null;
     protected addAfterButton: HTMLElement | null; 
+    protected fullscreenButton: HTMLElement | null; // Moved from subclasses
+    protected exitFullscreenButton: HTMLElement | null = null; // Found after view load
+
 
 
     constructor(data: SectionData, element: HTMLElement, callbacks: SectionCallbacks = {}) {
@@ -60,7 +62,7 @@ export abstract class BaseSection {
         this.llmButton = this.element.querySelector('.section-ai');
         this.addBeforeButton = this.element.querySelector('.section-add-before');
         this.addAfterButton = this.element.querySelector('.section-add-after');
-
+        this.fullscreenButton = this.element.querySelector('.section-fullscreen');
 
         if (!this.contentContainer) {
             console.error(`Section content container not found for section ID: ${this.data.id}`);
@@ -70,6 +72,19 @@ export abstract class BaseSection {
         this.updateTypeIcon();   // Set initial type icon
         this.bindCommonEvents();
         this.initializeSectionDisplay(); // Load initial view mode template
+         // Fullscreen button is bound dynamically by `enableFullscreen` if called by subclass
+     }
+ 
+     /** Enables the fullscreen button and functionality for this section */
+     protected enableFullscreen(): void {
+         if (this.fullscreenButton) {
+             this.fullscreenButton.classList.remove('hidden');
+             this.fullscreenButton.removeEventListener('click', this.enterFullscreen); // Prevent duplicates
+             this.fullscreenButton.addEventListener('click', this.enterFullscreen.bind(this));
+             console.log(`Fullscreen enabled for section ${this.data.id}`);
+         } else {
+             console.warn(`Attempted to enable fullscreen, but button not found for section ${this.data.id}`);
+         }
     }
 
     /** Removes the section's root element from the DOM */
@@ -273,6 +288,8 @@ export abstract class BaseSection {
         console.log(`Switching ${this.data.id} to view mode.`);
         if (this.loadTemplate('view')) {
             this.populateViewContent();
+             // Find the exit fullscreen button *after* the view template is loaded
+             this.exitFullscreenButton = this.contentContainer?.querySelector('.section-exit-fullscreen') as HTMLElement | null;
             this.bindViewModeEvents();
         } else {
             console.error("Failed to load view template for section", this.data.id);
@@ -350,6 +367,10 @@ export abstract class BaseSection {
     /** Binds event listeners specific to the elements within the Edit mode template (e.g., save/cancel buttons). */
     protected abstract bindEditModeEvents(): void;
 
+    /** Handles resizing the section's specific content (e.g., canvas, plot) when entering/exiting fullscreen or on window resize. */
+    protected abstract resizeContentForFullscreen(isEntering: boolean): void;
+
+
     /** Retrieves the current content state from the Edit mode UI elements. */
     protected abstract getContentFromEditMode(): SectionData['content'];
 
@@ -409,4 +430,67 @@ export abstract class BaseSection {
                 return { ...baseData, type: 'text', content: String(this.data.content) };
         }
     }
+ 
+     // --- Fullscreen State and Methods ---
+     protected isFullscreen: boolean = false;
+ 
+     protected enterFullscreen(): void {
+         if (this.isFullscreen || !this.contentContainer || !this.sectionHeaderElement) return;
+         console.log(`Entering fullscreen for section ${this.data.id}`);
+         this.isFullscreen = true;
+ 
+         // Add classes for styling
+         // Use specific classes for easier removal and potential customization
+         this.contentContainer.classList.add('lc-fullscreen-content');
+         document.body.classList.add('lc-fullscreen-active');
+         this.sectionHeaderElement.classList.add('hidden'); // Hide header
+         this.exitFullscreenButton?.classList.remove('hidden'); // Show exit button
+ 
+         // Bind exit listeners
+         this.exitFullscreenButton?.addEventListener('click', this.exitFullscreen.bind(this), { once: true });
+         document.addEventListener('keydown', this._handleKeyDown.bind(this));
+         window.addEventListener('resize', this._handleResize.bind(this));
+ 
+         // Allow content to adjust size *after* container is fullscreen
+         requestAnimationFrame(() => {
+             this.resizeContentForFullscreen(true); // Notify subclass to resize content
+         });
+     }
+ 
+     protected exitFullscreen(): void {
+         if (!this.isFullscreen || !this.contentContainer || !this.sectionHeaderElement) return;
+         console.log(`Exiting fullscreen for section ${this.data.id}`);
+         this.isFullscreen = false;
+ 
+         // Remove classes
+         this.contentContainer.classList.remove('lc-fullscreen-content');
+         document.body.classList.remove('lc-fullscreen-active');
+         this.sectionHeaderElement.classList.remove('hidden'); // Show header again
+         this.exitFullscreenButton?.classList.add('hidden'); // Hide exit button
+ 
+         // Unbind listeners
+         // Note: Click listener on exit button removed itself with { once: true }
+         document.removeEventListener('keydown', this._handleKeyDown.bind(this));
+         window.removeEventListener('resize', this._handleResize.bind(this));
+ 
+         // Allow content to adjust size *after* container is back to normal
+         requestAnimationFrame(() => {
+              this.resizeContentForFullscreen(false); // Notify subclass to resize content
+         });
+     }
+ 
+     // Bound listener function to ensure 'this' context and allow removal
+     private _boundHandleKeyDown = this._handleKeyDown.bind(this);
+     private _handleKeyDown(event: KeyboardEvent): void {
+         if (!this.isFullscreen) return; // Check state again just in case
+         if (event.key === 'Escape') {
+             this.exitFullscreen();
+         }
+     }
+ 
+     // Bound listener function
+     private _boundHandleResize = this._handleResize.bind(this);
+     private _handleResize(): void {
+         if (this.isFullscreen) this.resizeContentForFullscreen(true);
+     }
 }

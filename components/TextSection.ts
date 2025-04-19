@@ -196,4 +196,14 @@ export class TextSection extends BaseSection {
              this.mode = 'view'; // Revert mode if template fails
         }
     }
+
+ 
+     /** Implement the abstract method from BaseSection */
+     protected resizeContentForFullscreen(isEntering: boolean): void {
+         console.log(`TextSection ${this.data.id}: Resizing content trigger. Is entering fullscreen: ${isEntering}`);
+         // For TinyMCE with autoresize, explicit resizing is often not needed here.
+         // The browser layout handles width changes, and autoresize handles height.
+         // If specific resizing logic were needed (e.g., for a different editor), it would go here.
+         // Example: this.editorInstance?.execCommand('mceAutoResize'); // Might force a recalc if needed
+     }
 }

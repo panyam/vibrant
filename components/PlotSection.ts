@@ -15,6 +15,7 @@ export class PlotSection extends BaseSection {
          if (typeof this.data.content !== 'object' || this.data.content === null) {
             this.data.content = { format: 'placeholder_plot', data: {} };
         }
+        this.enableFullscreen();
     }
 
     protected populateViewContent(): void {
@@ -114,5 +115,15 @@ export class PlotSection extends BaseSection {
             format: 'placeholder_plot', // Or the actual format used by your plot lib
             data: plotData
         };
+    }
+
+    /** Implement the abstract method from BaseSection */
+    protected resizeContentForFullscreen(isEntering: boolean): void {
+       // This method is crucial for plotting libraries that need explicit resize calls.
+       console.log(`PlotSection ${this.data.id}: Resizing content for fullscreen=${isEntering}. Triggering plot library resize.`);
+
+       // --- Placeholder for actual plot library integration ---
+       // Example (Chart.js): if (this.plotInstance) { this.plotInstance.resize(); }
+       // Example (Plotly): if (this.plotContainerElement) { Plotly.Plots.resize(this.plotContainerElement); }
     }
 }

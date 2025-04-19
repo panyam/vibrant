@@ -555,3 +555,43 @@ video {
 }
 
 /* Add any custom styles here */
+
+/* Fullscreen Mode Styles */
+
+/* Prevent scrolling when fullscreen is active */
+
+.lc-fullscreen-active {
+  overflow: hidden;
+}
+
+/* Style the content container when in fullscreen */
+
+.lc-fullscreen-content {
+  position: fixed;
+  inset: 0px;
+  z-index: 50;
+  overflow: auto;
+  --tw-bg-opacity: 1;
+  background-color: rgb(255 255 255 / var(--tw-bg-opacity, 1));
+  padding: 1rem;
+  /* Use !important only if absolutely necessary to override conflicting styles */
+  /* position: fixed !important; */
+  /* Add transition for potential smoothness (optional) */
+  /* transition: all 0.3s ease-in-out; */
+}
+
+/* Dark mode styles for the fullscreen container */
+
+.dark .lc-fullscreen-content {
+  --tw-bg-opacity: 1;
+  background-color: rgb(38 38 38 / var(--tw-bg-opacity, 1));
+}
+
+/* Ensure the exit button within the fullscreen container is visible and above content */
+
+.lc-fullscreen-content .section-exit-fullscreen {
+  /* Styles already applied in TemplateRegistry.html */
+  z-index: 51;
+  /* Ensure z-index is higher than content */
+}
+ 
