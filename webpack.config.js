@@ -39,12 +39,29 @@ module.exports = (_env, options) => {
     module: {
       rules: [
         {
+          test: /\.jsx$/,
+          exclude: /node_modules/,
+          use: {
+            loader: 'ts-loader',
+            options: {
+              transpileOnly: true
+            }
+          },
+        },
+        {
           test: /\.js$/,
           exclude: path.resolve(context, "node_modules/"),
           use: ["babel-loader"],
         },
+        /*
         {
-          test: /\.ts$/,
+          test: /\.tsx$/,
+          use: 'ts-loader',
+          exclude: /node_modules/,
+        },
+        */
+        {
+          test: /\.tsx?$/,
           exclude: path.resolve(context, "node_modules/"),
           include: SRC_FOLDERS.map((x) => path.resolve(context, x)),
           use: [

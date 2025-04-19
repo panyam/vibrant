@@ -8,8 +8,9 @@
     "esModuleInterop": true,
     "experimentalDecorators": true,
     "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
     "lib": ["es2019", "es2015", "dom", "dom.Iterable"],
-    "module": "es2015",
+    "module": "esnext",
     "moduleResolution": "node",
     "noFallthroughCasesInSwitch": true,
     "noImplicitAny": true,
@@ -21,9 +22,9 @@
     "strict": true,
     "strictNullChecks": true,
     "strictPropertyInitialization": false,
-    "target": "es2015",
+    "target": "es6",
     "resolveJsonModule": true
   },
-  "include": [ "./components/*.ts"],
+  "include": [ "./components/*.ts", "./components/*.tsx"],
   "exclude": [ "node_modules", "dist" ]
 }
