@@ -125,37 +125,9 @@ module.exports = (_env, options) => {
           }),
       ),
 
-      // --- Copy TinyMCE Assets ---
-      new CopyPlugin({
-          patterns: [
-              // Ensure paths are correct: Copy FROM node_modules TO the output directory
-              {
-                  from: path.resolve(context, 'node_modules/tinymce/skins'),
-                  to: path.resolve(outputDir, 'skins'), // -> ./static/js/gen/skins
-                  globOptions: { ignore: ['**/.*'] } // Ignore hidden files like .DS_Store
-              },
-              {
-                  from: path.resolve(context, 'node_modules/tinymce/plugins'),
-                  to: path.resolve(outputDir, 'plugins'), // -> ./static/js/gen/plugins
-                  globOptions: { ignore: ['**/.*'] }
-              },
-              {
-                  from: path.resolve(context, 'node_modules/tinymce/themes'),
-                  to: path.resolve(outputDir, 'themes'), // -> ./static/js/gen/themes
-                  globOptions: { ignore: ['**/.*'] }
-              },
-              {
-                  from: path.resolve(context, 'node_modules/tinymce/icons'),
-                  to: path.resolve(outputDir, 'icons'), // -> ./static/js/gen/icons
-                  globOptions: { ignore: ['**/.*'] }
-              },
-              {
-                  from: path.resolve(context, 'node_modules/tinymce/models'),
-                  to: path.resolve(outputDir, 'models'), // -> ./static/js/gen/models
-                  globOptions: { ignore: ['**/.*'] }
-              },
-          ],
-      }),
+      // --- REMOVED Copy TinyMCE Assets ---
+      // new CopyPlugin({ ... }),
+
       // HMR plugin is only for dev server, remove if not using it
       // ...(isDevelopment ? [new webpack.HotModuleReplacementPlugin()] : []),
     ],

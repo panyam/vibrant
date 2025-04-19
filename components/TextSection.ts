@@ -3,28 +3,52 @@
 import { BaseSection } from './BaseSection';
 import { SectionData, SectionCallbacks, TextContent } from './types';
 
-// Import TinyMCE core, theme, icons, and model
-import tinymce, { Editor } from 'tinymce/tinymce';
-import 'tinymce/themes/silver/theme';
-import 'tinymce/icons/default/icons';
-import 'tinymce/models/dom/model';
+// --- Removed TinyMCE imports ---
 
+// Import markdown-it
+import MarkdownIt from 'markdown-it';
 
 export class TextSection extends BaseSection {
 
-    private editorInstance: Editor | null = null;
+    // --- Removed TinyMCE editorInstance ---
+    // private editorInstance: Editor | null = null;
+    private editorInstance: any = null; // Placeholder for Milkdown later
+
+    // Add markdown-it instance
+    private _md: MarkdownIt;
 
     constructor(data: SectionData, element: HTMLElement, callbacks: SectionCallbacks = {}) {
         super(data, element, callbacks);
+        // Initialize markdown-it
+        // You can configure it here if needed (e.g., enable HTML tags, add plugins)
+    }
+
+    get md(): MarkdownIt {
+      if (!this._md) {
+        this._md = new MarkdownIt({
+            html: true, // Allow HTML tags in Markdown source
+            linkify: true, // Autoconvert URL-like text to links
+            typographer: true, // Enable some language-neutral replacement + quotes beautification
+        });
+      }
+      return this._md
     }
 
     protected populateViewContent(): void {
         const viewContent = this.contentContainer?.querySelector('.section-view-content');
         if (viewContent) {
-            const initialContent = (typeof this.data.content === 'string' && this.data.content.length > 0)
-                ? this.data.content
-                : '<p class="text-gray-400 dark:text-gray-500 italic">Click to add content...</p>';
-            viewContent.innerHTML = initialContent;
+            // --- Use markdown-it to render ---
+            const markdownContent = typeof this.data.content === 'string' ? this.data.content : '';
+            const placeholder = '<p class="text-gray-400 dark:text-gray-500 italic">Click to add content...</p>';
+
+            try {
+                 // Render markdown, or use placeholder if markdown is empty
+                const renderedHtml = this.md.render(markdownContent.trim() ? markdownContent : placeholder);
+                viewContent.innerHTML = renderedHtml;
+            } catch (error) {
+                 console.error(`Error rendering Markdown for section ${this.data.id}:`, error);
+                 viewContent.innerHTML = `<p class="text-red-500">Error displaying content.</p>`; // Display error
+            }
         } else {
             console.warn(`View content area not found for text section ${this.data.id}`);
         }
@@ -33,46 +57,11 @@ export class TextSection extends BaseSection {
     protected populateEditContent(): void {
         const editorTarget = this.contentContainer?.querySelector('.text-editor-target');
         if (editorTarget instanceof HTMLElement) {
-            const initialContent = (typeof this.data.content === 'string') ? this.data.content : '';
-            const isDarkMode = document.documentElement.classList.contains('dark');
-
-            // Base path for TinyMCE assets *as served by the static server*
-            // This MUST match webpack's output.publicPath
-            const tinyMCEPublicPath = '/static/js/gen/'; // Path relative to domain root
-
-            tinymce.init({
-                target: editorTarget,
-                plugins: 'autolink lists link image charmap preview anchor searchreplace visualblocks code fullscreen insertdatetime media table help wordcount autoresize',
-                toolbar: 'undo redo | formatselect | bold italic backcolor | \
-                          alignleft aligncenter alignright alignjustify | \
-                          bullist numlist outdent indent | removeformat | help',
-                content_style: 'body { font-family:Helvetica,Arial,sans-serif; font-size:14px }',
-                height: 300,
-                menubar: false,
-                statusbar: false,
-                autoresize_bottom_margin: 10,
-                autoresize_min_height: 200,
-
-                // ** Paths for self-hosting **
-                // Ensure these paths correctly point to where CopyPlugin placed the assets,
-                // relative to the domain root, using the publicPath.
-                skin_url: `${tinyMCEPublicPath}skins/ui/${isDarkMode ? 'oxide-dark' : 'oxide'}`,
-                content_css: `${tinyMCEPublicPath}skins/content/${isDarkMode ? 'dark' : 'default'}/content.min.css`,
-
-                license_key: 'gpl',
-
-                setup: (editor: Editor) => {
-                    editor.on('init', () => {
-                        editor.setContent(initialContent || '');
-                        this.editorInstance = editor;
-                        editor.focus();
-                        console.log(`TinyMCE initialized for section ${this.data.id} (Self-Hosted)`);
-                    });
-                }
-            }).catch((error: any) => {
-                console.error(`Error initializing TinyMCE for section ${this.data.id}:`, error);
-                editorTarget.innerHTML = `<p class="text-red-500">Error initializing Rich Text Editor.</p>`;
-            });
+             // --- Placeholder for Milkdown initialization ---
+            console.log(`Placeholder: Initialize Milkdown editor in section ${this.data.id}`);
+            editorTarget.innerHTML = `<p class="text-gray-500 dark:text-gray-400 italic">Edit Mode: Milkdown editor will load here.</p>`;
+            // TODO: Initialize Milkdown here
+            // this.editorInstance = await Editor.make()...create();
 
         } else {
             console.warn(`Edit content target area (.text-editor-target) not found for text section ${this.data.id}`);
@@ -114,58 +103,65 @@ export class TextSection extends BaseSection {
 
 
     protected getContentFromEditMode(): TextContent {
-        if (this.editorInstance && this.editorInstance.initialized) {
-            try {
-                return this.editorInstance.getContent() || '';
-            } catch (error) {
-                console.error(`Error getting content from TinyMCE for section ${this.data.id}:`, error);
-                return typeof this.data.content === 'string' ? this.data.content : '';
-            }
+        // --- Placeholder for Milkdown content retrieval ---
+        if (this.editorInstance) {
+            console.warn(`Placeholder: Attempting to get Markdown content from Milkdown instance for section ${this.data.id}. NOT IMPLEMENTED YET.`);
+            // TODO: Implement Milkdown content retrieval (getMarkdown())
+            // For now, return the last known data content to avoid breaking save flow completely
+            // This assumes data.content *should* be Markdown eventually
+            return typeof this.data.content === 'string' ? this.data.content : '';
         }
-        console.warn(`TinyMCE instance not found or not initialized when getting content for section ${this.data.id}.`);
-        return typeof this.data.content === 'string' ? this.data.content : '';
+        console.warn(`Editor instance not found when getting content for section ${this.data.id}.`);
+        // Fallback: return existing data (likely HTML still at this stage, but we expect Markdown)
+         return typeof this.data.content === 'string' ? this.data.content : '';
     }
 
     public switchToViewMode(saveChanges: boolean): void {
         let contentToSave: TextContent | undefined = undefined;
 
         if (this.mode === 'edit') {
-            if (saveChanges && this.editorInstance && this.editorInstance.initialized) {
+            if (saveChanges && this.editorInstance) {
                 try {
-                    contentToSave = this.editorInstance.getContent() || '';
+                    // --- Get content using the (currently placeholder) method ---
+                    contentToSave = this.getContentFromEditMode();
                 } catch (error) {
-                    console.error(`Error getting content from TinyMCE before destroy for section ${this.data.id}:`, error);
+                    console.error(`Error getting content from editor before destroy for section ${this.data.id}:`, error);
                 }
             }
 
             if (this.editorInstance) {
                 try {
-                    console.log(`Attempting to remove TinyMCE instance for ${this.data.id}`);
-                    tinymce.remove(this.editorInstance);
+                    // --- Placeholder for Milkdown destruction ---
+                    console.log(`Placeholder: Attempting to destroy editor instance for ${this.data.id}`);
+                    // TODO: Call Milkdown's destroy/cleanup method
+                    // e.g., this.editorInstance.destroy?.();
                     this.editorInstance = null;
-                    console.log(`TinyMCE instance removed for ${this.data.id}`);
+                    console.log(`Placeholder: Editor instance reference removed for ${this.data.id}`);
                 } catch (error) {
-                    console.error(`Error removing TinyMCE instance for section ${this.data.id}:`, error);
-                    this.editorInstance = null;
+                    console.error(`Error destroying editor instance for section ${this.data.id}:`, error);
+                     this.editorInstance = null; // Ensure it's nulled even on error
                 }
             }
         }
 
+        // --- Save logic (using potentially stale/placeholder content for now) ---
         if (this.mode === 'edit' && saveChanges && contentToSave !== undefined) {
-            const newContent = contentToSave;
+            const newContent = contentToSave; // This is expected to be Markdown eventually
+             // Compare with current data (which might still be HTML or Markdown)
             if (newContent !== this.data.content) {
                 this.data.content = newContent;
                 this.callbacks.onContentChange?.(this.data.id, this.data.content);
-                console.log(`Section ${this.data.id} content saved.`);
+                console.log(`Section ${this.data.id} content potentially saved (as Markdown eventually).`);
             } else {
                 console.log(`Section ${this.data.id} content unchanged.`);
             }
         }
 
+        // --- Switch to View Mode ---
         this.mode = 'view';
         console.log(`Switching ${this.data.id} to view mode.`);
         if (this.loadTemplate('view')) {
-            this.populateViewContent();
+            this.populateViewContent(); // Uses markdown-it now
             this.bindViewModeEvents();
         } else {
             console.error("Failed to load view template for section", this.data.id);
@@ -174,22 +170,26 @@ export class TextSection extends BaseSection {
 
     public switchToEditMode(): void {
          if (this.mode === 'edit') {
-            this.editorInstance?.focus();
+            // TODO: Maybe focus Milkdown editor?
+            // this.editorInstance?.focus();
             return;
         }
 
         if (this.editorInstance) {
             console.warn(`Found existing editor instance when switching to edit mode for ${this.data.id}. Attempting cleanup.`);
-            try {
-                tinymce.remove(this.editorInstance);
-            } catch (e) { console.error("Error during cleanup remove:", e); }
-            this.editorInstance = null;
+             try {
+                 // --- Placeholder for Milkdown destruction ---
+                  console.log(`Placeholder: Attempting to destroy editor instance for ${this.data.id}`);
+                  // TODO: Call Milkdown's destroy/cleanup method
+                  this.editorInstance = null;
+             } catch (e) { console.error("Error during cleanup remove:", e); }
+             this.editorInstance = null;
         }
 
         this.mode = 'edit';
         console.log(`Switching ${this.data.id} to edit mode.`);
         if (this.loadTemplate('edit')) {
-            this.populateEditContent(); // This will initialize TinyMCE
+            this.populateEditContent(); // Will eventually initialize Milkdown
             this.bindEditModeEvents();
         } else {
              console.error("Failed to load edit template for section", this.data.id);
@@ -197,13 +197,15 @@ export class TextSection extends BaseSection {
         }
     }
 
- 
+
      /** Implement the abstract method from BaseSection */
      protected resizeContentForFullscreen(isEntering: boolean): void {
          console.log(`TextSection ${this.data.id}: Resizing content trigger. Is entering fullscreen: ${isEntering}`);
-         // For TinyMCE with autoresize, explicit resizing is often not needed here.
-         // The browser layout handles width changes, and autoresize handles height.
-         // If specific resizing logic were needed (e.g., for a different editor), it would go here.
-         // Example: this.editorInstance?.execCommand('mceAutoResize'); // Might force a recalc if needed
+         // TODO: Check if Milkdown needs explicit resize handling
+         // If Milkdown editor is active, might need to notify it:
+         // if (this.mode === 'edit' && this.editorInstance) {
+         //    console.log("Placeholder: Trigger Milkdown resize/update if needed.");
+         //    // e.g., this.editorInstance.update?.(); // Or specific resize command
+         // }
      }
 }

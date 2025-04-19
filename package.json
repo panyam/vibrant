@@ -26,7 +26,6 @@
     "galore": "*",
     "golden-layout": "^2.6.0",
     "markdown-it": "*",
-    "tinymce": "^7.8.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
