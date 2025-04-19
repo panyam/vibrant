@@ -445,6 +445,7 @@ export abstract class BaseSection {
          // Target the main element now
          this.element.classList.add('lc-section-fullscreen');
          this.element.classList.add('flex', 'flex-col'); // Ensure header/content stack vertically if needed
+         this.element.classList.remove('mb-6'); // Ensure header/content stack vertically if needed
          this.contentContainer?.classList.add('flex-grow', 'overflow-auto'); // Make content area take remaining space and scroll internally
          document.body.classList.add('lc-fullscreen-active');
  
@@ -476,6 +477,7 @@ export abstract class BaseSection {
       // Remove classes
       this.element.classList.remove('lc-section-fullscreen');
       this.element.classList.remove('flex', 'flex-col');
+      this.element.classList.add('mb-6'); // Ensure header/content stack vertically if needed
       this.contentContainer?.classList.remove('flex-grow', 'overflow-auto');
       document.body.classList.remove('lc-fullscreen-active');
       this.exitFullscreenButton?.classList.add('hidden'); // Hide exit button

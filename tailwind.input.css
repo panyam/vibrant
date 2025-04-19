@@ -6,8 +6,9 @@
  
  /* Fullscreen Mode Styles */
  
- /* Prevent scrolling when fullscreen is active */
- .lc-fullscreen-active {
+/* Style the *entire section* element when in fullscreen */
+.lc-section-fullscreen {
+
    @apply overflow-hidden;
  }
  
@@ -18,16 +19,34 @@
    /* position: fixed !important; */
    /* Add transition for potential smoothness (optional) */
    /* transition: all 0.3s ease-in-out; */
+   /* Add padding back since the outer container now has it */
+   @apply p-0; /* Reset padding on the main container */
  }
  
  /* Dark mode styles for the fullscreen container */
- .dark .lc-fullscreen-content {
+.dark .lc-section-fullscreen {
     @apply bg-gray-800;
  }
  
- /* Ensure the exit button within the fullscreen container is visible and above content */
- .lc-fullscreen-content .section-exit-fullscreen {
-     /* Styles already applied in TemplateRegistry.html */
-     @apply z-[51]; /* Ensure z-index is higher than content */
- }
- 
+/* .section-exit-fullscreen is now a direct child, styles in Section.html handle positioning/z-index */
+
+/* === Add Fullscreen Styles INSIDE @layer components === */
+@layer components {
+  /* Prevent scrolling when fullscreen is active */
+  .lc-fullscreen-active {
+    @apply overflow-hidden;
+  }
+
+  /* Style the *entire section* element when in fullscreen */
+  .lc-section-fullscreen {
+    /* Make it cover the screen, add padding, and a slightly translucent background */
+    @apply fixed inset-0 z-50 bg-white/95 dark:bg-gray-800/95 p-6 overflow-auto backdrop-blur-sm mt-0;
+
+    /* Add transition for potential smoothness (optional) */
+    transition: all 0.3s ease-in-out;
+  }
+
+  .dark .lc-section-fullscreen {
+    @apply bg-gray-900/95 dark:bg-gray-800/95; /* Adjust dark background if needed */
+  }
+}
