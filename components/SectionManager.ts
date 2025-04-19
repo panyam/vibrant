@@ -19,6 +19,7 @@ export class SectionManager {
     private nextSectionId: number = 1;
     private sectionsContainer: HTMLElement | null;
     private emptyStateEl: HTMLElement | null;
+    private fabAddSectionBtn: HTMLElement | null;
     private sectionTemplate: HTMLElement | null;
     private modal: Modal;
 
@@ -57,10 +58,11 @@ export class SectionManager {
     constructor() {
         this.sectionsContainer = document.getElementById('sections-container');
         this.emptyStateEl = document.getElementById('empty-state');
+        this.fabAddSectionBtn = document.getElementById('fab-add-section-btn'); // Find the new area
         this.sectionTemplate = document.getElementById('section-template');
         this.modal = Modal.getInstance();
 
-        if (!this.sectionsContainer || !this.emptyStateEl || !this.sectionTemplate) {
+        if (!this.sectionsContainer || !this.emptyStateEl || !this.fabAddSectionBtn || !this.sectionTemplate) {
             console.error("SectionManager: Could not find all required DOM elements. Check IDs.");
         }
         if (this.sectionTemplate) {
@@ -117,6 +119,19 @@ export class SectionManager {
                  this.modal.hide(); // Close modal
              }
          });
+
+         // Bind the FAB "Add Section" button
+         if (this.fabAddSectionBtn) { // Use the class property directly
+            this.fabAddSectionBtn.addEventListener('click', () => {
+                // Find the ID of the *current* last section
+                const lastSection = this.sectionData.length > 0
+                    ? this.sectionData.sort((a, b) => a.order - b.order)[this.sectionData.length - 1]
+                    : null;
+                const lastSectionId = lastSection ? lastSection.id : null;
+                // Open selector to add AFTER the last section (or to the end if list is empty, though button should be hidden then)
+                this.openSectionTypeSelector(lastSectionId, 'after');
+            });
+         }
     }
 
     /** Open section type selector modal */
@@ -398,11 +413,13 @@ export class SectionManager {
 
     /** Handle empty state visibility */
     private handleEmptyState(): void {
-        if (!this.emptyStateEl) return;
+        if (!this.emptyStateEl || !this.fabAddSectionBtn) return;
         if (this.sectionData.length === 0) {
             this.emptyStateEl.classList.remove('hidden');
+            this.fabAddSectionBtn.classList.add('hidden'); // Hide final button when empty
         } else {
             this.emptyStateEl.classList.add('hidden');
+            this.fabAddSectionBtn.classList.remove('hidden'); // Show final button when not empty
         }
     }
 
