@@ -2,6 +2,8 @@
 INSTRUCTIONS
 ============
 
+### Stack Details
+
 * All component typescript files will be in the "./components" folder
 
 * All html templates will be in the "./templates" folder.
@@ -54,3 +56,17 @@ You can assume that I have an engine that will render template components for te
 Use typescript instead of javascript.  You can assume a webpack builder already exists and it will generate files with the prefix "gen.<Component>.html" so you do not have to generate webpack configs for me.  
 
 When generating typescript files put them in their own files in the "./components" folder.
+
+### Project Conventions
+
+* Templates will contain all the top and component level templates
+
+* Our convention is for root pages to be named templates/XYZPage.html where XYZ is the name of the page, eg DetailPage,
+  ListingPage etc
+
+* Every templates/XYZPage.html will have a corresponding components/XYZPage.ts for the page's
+  entrypoint html that will setup all handlers, and be kicked off on DOMContentLoaded event.   If the page is using any
+  third party React components it may be instead called components/XYZPage.tsx (to allow for embedding tsx).
+
+* Each entry level page components/XYZPage.ts (or .tsx) is compiled by our webpack config into
+  templates/gen.XYZPage.html so that this generated bundle is included by templates/XYZPage.html
