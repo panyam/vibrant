@@ -447,6 +447,21 @@ export class SectionManager {
     }
 
 
+    /**
+     * Notifies all managed sections that the application theme has changed.
+     * Each section is responsible for handling the change if necessary.
+     */
+    public notifySectionsOfThemeChange(): void {
+        console.log("SectionManager: Notifying all sections of theme change...");
+        this.sections.forEach(section => {
+            try {
+                section.handleThemeChange();
+            } catch (error) {
+                 console.error(`Error handling theme change for section ${section.getId()}:`, error);
+            }
+        });
+    }
+
     /** Initialize the component */
     public static init(): SectionManager {
         return new SectionManager();

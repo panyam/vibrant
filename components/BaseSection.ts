@@ -513,4 +513,15 @@ export abstract class BaseSection {
      private _handleResize(): void {
          if (this.isFullscreen) this.resizeContentForFullscreen(true);
      }
+
+    /**
+     * Called when the application theme (light/dark) changes.
+     * Subclasses can override this method to react to the theme change,
+     * e.g., by re-rendering components or adjusting styles.
+     * The default implementation does nothing.
+     */
+    public handleThemeChange(): void {
+        // Default: Do nothing. Subclasses override if needed.
+        // console.log(`BaseSection ${this.data.id}: Theme change notification received.`);
+    }
 }

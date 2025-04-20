@@ -1193,10 +1193,6 @@ video {
   right: 0.75rem;
 }
 
-.right-4 {
-  right: 1rem;
-}
-
 .right-8 {
   right: 2rem;
 }
@@ -1438,10 +1434,6 @@ video {
 
 .w-6 {
   width: 1.5rem;
-}
-
-.w-64 {
-  width: 16rem;
 }
 
 .w-72 {
@@ -2409,6 +2401,10 @@ video {
 
 .dark\:focus\:ring-offset-gray-800:focus:is(.dark *) {
   --tw-ring-offset-color: #1f2937;
+}
+
+.dark\:focus\:ring-offset-gray-900:focus:is(.dark *) {
+  --tw-ring-offset-color: #111827;
 }
 
 .group:hover .dark\:group-hover\:text-blue-400:is(.dark *) {

@@ -11,7 +11,7 @@ const SRC_FOLDERS = ["./components"];
 const OUTPUT_FOLDERS = ["./templates"]; // Where gen.*.html files go
 
 const components = [
-  ["App", 0, "ts"],
+  ["DetailPage", 0, "ts"],
 ];
 
 module.exports = (_env, options) => {
