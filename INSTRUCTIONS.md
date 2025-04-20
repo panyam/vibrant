@@ -70,3 +70,6 @@ When generating typescript files put them in their own files in the "./component
 
 * Each entry level page components/XYZPage.ts (or .tsx) is compiled by our webpack config into
   templates/gen.XYZPage.html so that this generated bundle is included by templates/XYZPage.html
+
+* We are using templates/TemplateRegistry.html to store a bunch of client side templates.  This file should always be
+  included via "{{# include ... #}}" after the body in the html.

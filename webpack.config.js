@@ -12,6 +12,7 @@ const OUTPUT_FOLDERS = ["./templates"]; // Where gen.*.html files go
 
 const components = [
   ["DetailPage", 0, "ts"],
+  ["ListingPage", 0, "ts"],
 ];
 
 module.exports = (_env, options) => {
