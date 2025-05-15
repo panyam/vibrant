@@ -13,6 +13,7 @@ const OUTPUT_FOLDERS = ["./templates"]; // Where gen.*.html files go
 const components = [
   ["DetailPage", 0, "ts"],
   ["ListingPage", 0, "ts"],
+  ["LoginPage", 0, "ts"],
 ];
 
 module.exports = (_env, options) => {
@@ -103,7 +104,7 @@ module.exports = (_env, options) => {
       // Public path where browser requests bundles/assets. Matches path structure served by static server.
       publicPath: `${staticPublicPath}/js/gen/`, // -> /static/js/gen/
       filename: "[name].[contenthash].js",
-      library: ["notation", "[name]"],
+      library: ["viberunner", "[name]"],
       libraryTarget: "umd",
       umdNamedDefine: true,
       globalObject: "this",
@@ -121,7 +122,7 @@ module.exports = (_env, options) => {
             chunks: [component[0]],
             filename: path.resolve(__dirname, `${OUTPUT_FOLDERS[component[1]]}/gen.${component[0]}.html`),
             templateContent: "",
-            minify: false,
+            minify: false, // { collapseWhitespace: false },
             inject: 'body',
           }),
       ),
@@ -157,8 +158,6 @@ module.exports = (_env, options) => {
               },
           ],
       }),
-      // HMR plugin is only for dev server, remove if not using it
-      // ...(isDevelopment ? [new webpack.HotModuleReplacementPlugin()] : []),
     ],
     optimization: {
       splitChunks: {
