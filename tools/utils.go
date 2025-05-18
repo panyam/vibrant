@@ -7,6 +7,8 @@ import (
 	"os"
 	"path"
 	"strings"
+
+	"golang.design/x/clipboard"
 )
 
 func createNewFile(filePath, content string) (string, error) {
@@ -48,10 +50,12 @@ func getUserMessageTillEOF() (string, error) {
 	}
 }
 
-func getUserMessage() (string, bool) {
-	scanner := bufio.NewScanner(os.Stdin)
-	if !scanner.Scan() {
-		return "", false
+func GetInputFromUserOrClipboard(fromClipboard bool) (input string, err error) {
+	fmt.Print("\u001b[94mEnter Tool Call Params\u001b[0m: ")
+	if fromClipboard {
+		input = string(clipboard.Read(clipboard.FmtText))
+	} else {
+		input, err = getUserMessageTillEOF()
 	}
-	return scanner.Text(), true
+	return
 }

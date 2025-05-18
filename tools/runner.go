@@ -25,17 +25,10 @@ func init() {
 }
 
 func RunTool(fromClipboard bool, name string, args []string) {
-	var err error
-	fmt.Print("\u001b[94mEnter Tool Call Params\u001b[0m: ")
-	input := ""
-	if fromClipboard {
-		input = string(clipboard.Read(clipboard.FmtText))
-	} else {
-		input, err = getUserMessageTillEOF()
-		if err != nil {
-			log.Println("Error reading input: ", err)
-			return
-		}
+	input, err := GetInputFromUserOrClipboard(fromClipboard)
+	if err != nil {
+		log.Println("Error reading input: ", err)
+		return
 	}
 
 	// log.Println("Got Input: ", input)

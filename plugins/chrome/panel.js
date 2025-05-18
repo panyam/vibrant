@@ -44,7 +44,7 @@ function executeInInspectedPage(commandDetails) {
     case 'SCROLL_DELTA':
       const deltaY = commandDetails.deltaY || 0;
       const deltaX = commandDetails.deltaX || 0;
-      evalString = `window.scrollBy(${deltaX}, ${deltaY}); console.log('[AgentAction] Scrolled by deltaX: ${deltaX}, deltaY: ${deltaY}');`;
+      evalString = `a = document.querySelector("ms-autoscroll-container") ; a.scrollBy(${deltaX}, ${deltaY}); console.log('[AgentAction] Scrolled by deltaX: ${deltaX}, deltaY: ${deltaY}');`;
       break;
     case 'QUERY_SELECTOR_ALL':
       if (!commandDetails.selector) {
