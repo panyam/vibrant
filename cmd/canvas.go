@@ -13,12 +13,13 @@ var canvasCmd = &cobra.Command{
 	// Args:  cobra.ExactArgs(3), // metric_type, system_name, analysis_name
 	Run: func(cmd *cobra.Command, args []string) {
 		// Start the server
+		port, _ := cmd.Flags().GetString("port")
 		b := tu.BasicServer{
 			FuncMaps: []map[string]any{
 				gotl.DefaultFuncMap(),
 			},
 		}
-		b.Serve(nil, ":7777") // Assuming this uses http.DefaultServeMux
+		b.Serve(nil, ":" + port) // BasicServer uses http.DefaultServeMux
 	},
 }
 
