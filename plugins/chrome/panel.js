@@ -1,10 +1,17 @@
 const connectionNameInput =  document.getElementById('connectionName');
-const connectButton = document.getElementById('connectButton');
+const connectButton =  document.getElementById('connectButton');
 const disconnectButton = document.getElementById('disconnectButton');
 const statusDiv = document.getElementById('status');
 
 let panelPort = null;
-let currentConnectionName = null;
+let currentConnectionName = null; // Store the name used for the current/last successful connection
+
+// Reconnection logic variables
+let reconnectAttempts = 0;
+let reconnectTimeoutId = null;
+let userInitiatedDisconnect = false; // Flag to prevent auto-reconnect if user clicks "Disconnect"
+const INITIAL_RECONNECT_DELAY = 1000; // 1 second
+const MAX_RECONNECT_DELAY = 10000;    // 10 seconds
 
 // Function to log any data to the inspected page's console
 function logToInspectedPageConsole(data, prefix = '[AgentMSG]') {
@@ -28,7 +35,6 @@ function executeInInspectedPage(commandDetails) {
     return;
   }
   const commandType = commandDetails.type;
-
   console.log("Panel: Processing command: ", commandDetails);
 
   switch (commandType) {
@@ -87,26 +93,28 @@ function executeInInspectedPage(commandDetails) {
         logToInspectedPageConsole({ error: "Selector or value missing for SET_INPUT_VALUE", details: commandDetails }, "[AgentActionError]");
         return;
       }
-      const shouldSubmit = JSON.stringify(commandDetails.submit);
+      // Including your submitSelector logic
+      const shouldSubmit = JSON.stringify(commandDetails.submit); 
       const submitSelector = JSON.stringify((commandDetails.submitSelector || "").trim());
       evalString = `
         (() => {
           const el = document.querySelector(${JSON.stringify(commandDetails.selector)});
-
           if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
-            el.focus(); // Focus the element first
+            el.focus();
             el.value = ${JSON.stringify(commandDetails.value)};
-            // Dispatch 'input' and 'change' events to mimic user interaction
             el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
             el.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-            // el.blur(); // Optionally blur after setting
             console.log('[AgentAction] Set value and dispatched events for selector: ' + ${JSON.stringify(commandDetails.selector)});
-
-            if (${shouldSubmit}) {
-                const submitSelector = ${submitSelector}
-                const submitButton = document.querySelector(submitSelector);
-                const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-                submitButton.dispatchEvent(clickEvent);
+            
+            if (${shouldSubmit} && ${submitSelector} !== '""') {
+                const submitBtn = document.querySelector(${submitSelector});
+                if (submitBtn instanceof HTMLElement) {
+                    const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+                    submitBtn.dispatchEvent(clickEvent);
+                    console.log('[AgentAction] Also clicked submit button: ' + ${submitSelector});
+                } else {
+                    console.warn('[AgentAction] Submit button not found for selector: ' + ${submitSelector});
+                }
             }
             return { success: true, selector: ${JSON.stringify(commandDetails.selector)}, valueSet: ${JSON.stringify(commandDetails.value)} };
           } else {
@@ -124,13 +132,8 @@ function executeInInspectedPage(commandDetails) {
       evalString = `
         (() => {
           const el = document.querySelector(${JSON.stringify(commandDetails.selector)});
-          if (el instanceof HTMLElement) { // Check if it's an HTMLElement
-            // Create and dispatch a mouse event
-            const clickEvent = new MouseEvent('click', {
-              bubbles: true,
-              cancelable: true,
-              view: window
-            });
+          if (el instanceof HTMLElement) {
+            const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
             el.dispatchEvent(clickEvent);
             console.log('[AgentAction] Dispatched click event on element with selector: ' + ${JSON.stringify(commandDetails.selector)});
             return { success: true, selector: ${JSON.stringify(commandDetails.selector)} };
@@ -167,11 +170,53 @@ function executeInInspectedPage(commandDetails) {
   }
 }
 
+function scheduleReconnect() {
+    if (userInitiatedDisconnect) {
+        console.log("Panel: User initiated disconnect. Not attempting auto-reconnect.");
+        return;
+    }
+    if (!currentConnectionName) {
+        console.log("Panel: No current connection name available. Cannot auto-reconnect.");
+        if (statusDiv) statusDiv.textContent = "Status: Disconnected. Enter name and connect.";
+        if (connectButton) connectButton.style.display = 'inline-block';
+        if (disconnectButton) disconnectButton.style.display = 'none';
+        if (connectionNameInput) connectionNameInput.disabled = false;
+        return;
+    }
 
-function connect() {
-  if (!panelPort) {
+    reconnectAttempts++;
+    let delay = INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts -1 );
+    if (delay > MAX_RECONNECT_DELAY) {
+        delay = MAX_RECONNECT_DELAY;
+    }
+
+    console.log(`Panel: Attempting reconnect #${reconnectAttempts} in ${delay / 1000} seconds for ${currentConnectionName}.`);
+    if (statusDiv) statusDiv.textContent = `Status: Disconnected. Reconnecting in ${Math.round(delay/1000)}s... (Attempt ${reconnectAttempts})`;
+    
+    clearTimeout(reconnectTimeoutId); // Clear any existing timeout
+    reconnectTimeoutId = setTimeout(() => {
+        console.log("Panel: Reconnect timer fired. Calling connect().");
+        // Ensure connectionNameInput has the currentConnectionName for the connect() function to use
+        if (connectionNameInput) connectionNameInput.value = currentConnectionName; 
+        connect(false); // Pass flag to indicate it's not a direct user click
+    }, delay);
+}
+
+function clearReconnectTimer() {
+    clearTimeout(reconnectTimeoutId);
+    reconnectTimeoutId = null;
+}
+
+function connect(isUserClick = true) {
+  clearReconnectTimer(); // Always clear pending reconnects when attempting to connect
+  if (isUserClick) {
+    userInitiatedDisconnect = false; // User wants to connect/reconnect
+    reconnectAttempts = 0; // Reset attempts on manual connect
+  }
+
+  if (!panelPort) { // Only establish port if it doesn't exist
     panelPort = chrome.runtime.connect({ name: "devtools-panel-" + chrome.devtools.inspectedWindow.tabId });
-    console.log("Panel: Port connected to background script.");
+    console.log("Panel: Port (re)established with background script.");
 
     panelPort.onMessage.addListener(function(message) {
       console.log("Panel: Received message from background:", message);
@@ -187,48 +232,88 @@ function connect() {
           if (connectButton) connectButton.style.display = 'none';
           if (disconnectButton) disconnectButton.style.display = 'inline-block';
           if (connectionNameInput) connectionNameInput.disabled = true;
-        } else {
+          userInitiatedDisconnect = false; // Reset on successful connect
+          reconnectAttempts = 0; // Reset on successful connect
+          clearReconnectTimer(); // Clear any reconnect timer as we are now connected
+        } else { // Disconnected or Error status
           if (connectButton) connectButton.style.display = 'inline-block';
           if (disconnectButton) disconnectButton.style.display = 'none';
           if (connectionNameInput) connectionNameInput.disabled = false;
-          currentConnectionName = null;
+          
+          // Only schedule reconnect if it wasn't a user-initiated disconnect
+          // and the status indicates a closed/errored WebSocket
+          if (!userInitiatedDisconnect && (message.status === "Disconnected" || message.status.startsWith("Error:"))) {
+             console.log("Panel: WebSocket status is not 'Connected'. Scheduling reconnect.");
+             scheduleReconnect();
+          } else if (userInitiatedDisconnect) {
+             console.log("Panel: WebSocket status is not 'Connected', but user initiated disconnect. No auto-reconnect.");
+             currentConnectionName = null; // Clear connection name as user disconnected
+          }
         }
       }
     });
 
     panelPort.onDisconnect.addListener(function() {
-      console.warn("Panel: Port disconnected from background script.");
-      if (statusDiv) statusDiv.textContent = "Status: Disconnected from background. Reload DevTools?";
-      panelPort = null;
+      console.warn("Panel: Port to background script disconnected.");
+      if (statusDiv) statusDiv.textContent = "Status: Disconnected from background script.";
+      panelPort = null; // Nullify the port
+      // Don't immediately try to reconnect the port itself here,
+      // rely on WebSocket status or user action.
+      // If WebSocket was active, its closure should trigger scheduleReconnect.
+      // If user tries to connect, a new port will be made.
       if (connectButton) connectButton.style.display = 'inline-block';
       if (disconnectButton) disconnectButton.style.display = 'none';
       if (connectionNameInput) connectionNameInput.disabled = false;
+      
+      // If the port disconnects, and we weren't told the WebSocket closed,
+      // it might be an extension reload or something.
+      // We could try to schedule a reconnect for the WebSocket if a connection was active.
+      if (!userInitiatedDisconnect && currentConnectionName) {
+          console.log("Panel: Port disconnected, attempting to re-establish WebSocket connection.");
+          scheduleReconnect();
+      }
     });
   }
 
-  const connectionNameVal = connectionNameInput ? connectionNameInput.value.trim() : "";
-  if (connectionNameVal) {
-    currentConnectionName = connectionNameVal;
+  const nameToConnect = connectionNameInput ? connectionNameInput.value.trim() : "";
+  if (nameToConnect) {
+    currentConnectionName = nameToConnect; // Update currentConnectionName for reconnects
     console.log(`Panel: Attempting to connect WebSocket for name: ${currentConnectionName} on tab ${chrome.devtools.inspectedWindow.tabId}`);
-    panelPort.postMessage({
-      type: "CONNECT_WEBSOCKET",
-      tabId: chrome.devtools.inspectedWindow.tabId,
-      connectionName: currentConnectionName
-    });
-    if (statusDiv) statusDiv.textContent = "Status: Connecting...";
+    if (panelPort) { // Ensure port is available before posting message
+        panelPort.postMessage({
+          type: "CONNECT_WEBSOCKET",
+          tabId: chrome.devtools.inspectedWindow.tabId,
+          connectionName: currentConnectionName
+        });
+        if (statusDiv && !isUserClick && reconnectAttempts > 0) {
+            // Status is already "Reconnecting...", don't overwrite with "Connecting..."
+        } else if (statusDiv) {
+            statusDiv.textContent = "Status: Connecting...";
+        }
+    } else {
+        console.error("Panel: panelPort is null, cannot send CONNECT_WEBSOCKET message. This usually means the background script connection was lost.");
+        if(statusDiv) statusDiv.textContent = "Status: Error - No connection to background script.";
+        // Potentially try to re-establish panelPort here or guide user
+    }
   } else {
-    if (statusDiv) statusDiv.textContent = "Status: Please enter a connection name.";
+    if (isUserClick && statusDiv) statusDiv.textContent = "Status: Please enter a connection name.";
+    // Don't clear currentConnectionName if it's an auto-reconnect attempt without input value
   }
 }
 
 function disconnect() {
+  userInitiatedDisconnect = true; // User clicked disconnect
+  clearReconnectTimer(); // Stop any attempts to reconnect
+  reconnectAttempts = 0;
+
   if (panelPort && currentConnectionName) {
-    console.log(`Panel: Sending disconnect request for ${currentConnectionName}`);
+    console.log(`Panel: User initiated disconnect for ${currentConnectionName}`);
     panelPort.postMessage({
       type: "DISCONNECT_WEBSOCKET",
       tabId: chrome.devtools.inspectedWindow.tabId,
-      connectionName: currentConnectionName
+      connectionName: currentConnectionName 
     });
+    // UI update will happen via WEBSOCKET_STATUS message ("Disconnected")
   } else {
     console.warn("Panel: No active connection or port to disconnect.");
     if (statusDiv) statusDiv.textContent = "Status: Not Connected";
@@ -236,9 +321,31 @@ function disconnect() {
     if (disconnectButton) disconnectButton.style.display = 'none';
     if (connectionNameInput) connectionNameInput.disabled = false;
   }
+  // currentConnectionName = null; // Clear after sending disconnect
 }
 
-if (connectButton) connectButton.addEventListener('click', connect);
+if (connectButton) connectButton.addEventListener('click', () => connect(true));
 if (disconnectButton) disconnectButton.addEventListener('click', disconnect);
 
 console.log("Panel.js loaded for tab: " + chrome.devtools.inspectedWindow.tabId);
+
+// Attempt to restore connection name from session storage if panel is reloaded for the same tab
+// This is a simple way to remember the last name for this tab session.
+const storageKey = `lastConnectionName_${chrome.devtools.inspectedWindow.tabId}`;
+const savedName = sessionStorage.getItem(storageKey);
+if (savedName && connectionNameInput) {
+    connectionNameInput.value = savedName;
+    // Optionally, you could try to query background if a connection is already active for this.
+    // For now, user still needs to click connect.
+}
+
+// Save connection name on successful connect or user input change
+if (connectionNameInput) {
+    connectionNameInput.addEventListener('change', (event) => {
+        if (event.target.value) {
+            sessionStorage.setItem(storageKey, event.target.value);
+        } else {
+            sessionStorage.removeItem(storageKey);
+        }
+    });
+}
