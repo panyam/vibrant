@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Agent Logger Panel</title>
+  <style>
+    body { font-family: sans-serif; padding: 10px; }
+    input[type=\"text\"] { margin-bottom: 5px; width: calc(100% - 70px); }
+    button { margin-left: 5px; }
+    #status { margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <input type="text" id="connectionName" placeholder="Connection Name (e.g., myClient)">
+  <button id="connectButton">Connect</button>
+  <button id="disconnectButton" style="display:none;">Disconnect</button>
+  <div id="status">Status: Not Connected</div>
+
+  <script src="panel.js"></script>
+</body>
+</html>
