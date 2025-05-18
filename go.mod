@@ -1,4 +1,4 @@
-module github.com/panyam/viberunner
+module github.com/panyam/vibrant
 
 go 1.24.0
 

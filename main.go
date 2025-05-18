@@ -68,7 +68,8 @@ func RunTool(name string, args []string) {
 	if err != nil {
 		log.Printf("error: %v", err)
 	} else {
-		fmt.Println("\nTOOL CALLED SUCCESSFULLY.  Result: ", result)
+		fmt.Println("\nTOOL CALLED SUCCESSFULLY.  Result: ")
+		fmt.Println(result)
 	}
 }
 

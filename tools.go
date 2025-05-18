@@ -298,12 +298,12 @@ func (r *ApplyFileDiff) Run(args map[string]any) (any, error) {
 	if err != nil {
 		panic(err)
 	}
-	defer os.Remove(tempinfile.Name())
+	log.Println("Creating Temporary Input File: ", tempinfile.Name())
 	temppatchfile, err := os.CreateTemp("", "patchfile")
 	if err != nil {
 		panic(err)
 	}
-	defer os.Remove(temppatchfile.Name())
+	log.Println("Creating Temporary Patch File: ", temppatchfile.Name())
 
 	if _, err = tempinfile.Write([]byte(currcontents)); err != nil {
 		panic(err)
@@ -313,6 +313,7 @@ func (r *ApplyFileDiff) Run(args map[string]any) (any, error) {
 		panic(err)
 	}
 
+	log.Printf("Running patch -u %s -i %s", tempinfile.Name(), temppatchfile.Name())
 	cmd := exec.Command("patch", "-u", tempinfile.Name(), "-i", temppatchfile.Name())
 	output, err := cmd.Output()
 	if err != nil {
