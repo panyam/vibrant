@@ -9,7 +9,8 @@ let currentConnectionName = null;
 // Function to log any data to the inspected page's console
 function logToInspectedPageConsole(data, prefix = '[AgentMSG]') {
   const jsonStringData = JSON.stringify(data);
-  const evalString = `console.log('${prefix}', ${jsonStringData});`;
+  // Ensure prefix is a string literal in the eval'd code
+  const evalString = `console.log(${JSON.stringify(prefix)}, ${jsonStringData});`;
   chrome.devtools.inspectedWindow.eval(
     evalString,
     function(result, isException) {
@@ -24,6 +25,11 @@ function logToInspectedPageConsole(data, prefix = '[AgentMSG]') {
 // Function to execute specific commands in the inspected page
 function executeInInspectedPage(commandDetails) {
   let evalString = "";
+  // Ensure commandDetails and its type property exist
+  if (!commandDetails || typeof commandDetails.type === 'undefined') {
+    logToInspectedPageConsole({ error: "Command details or type is missing", received: commandDetails }, "[AgentActionError]");
+    return;
+  }
   const commandType = commandDetails.type;
 
   console.log("Panel: Processing command: ", commandDetails);
@@ -45,23 +51,20 @@ function executeInInspectedPage(commandDetails) {
         logToInspectedPageConsole({ error: "Selector missing for QUERY_SELECTOR_ALL", details: commandDetails }, "[AgentActionError]");
         return;
       }
-      // This eval will return data, which will be handled by the callback.
-      // We also log the initiation of the query.
       evalString = `
-        console.log('[AgentAction] Executing querySelectorAll for: ${commandDetails.selector}');
+        console.log('[AgentAction] Executing querySelectorAll for: ' + ${JSON.stringify(commandDetails.selector)});
         Array.from(document.querySelectorAll(${JSON.stringify(commandDetails.selector)})).map(el => {
           let details = {
             tagName: el.tagName,
             id: el.id,
             className: el.className,
-            rect: el.getBoundingClientRect ? el.getBoundingClientRect() : null,
-            innerText: el.innerText ? el.innerText.substring(0, 100) : null, // First 100 chars
-            outerHTML: el.outerHTML ? el.outerHTML.substring(0, 200) : null // First 200 chars of outerHTML
+            rect: el.getBoundingClientRect ? el.getBoundingClientRect() : {}, // Ensure rect is an object
+            innerText: el.innerText ? el.innerText.substring(0, 100) : '',    // Ensure string
+            outerHTML: el.outerHTML ? el.outerHTML.substring(0, 200) : ''  // Ensure string
           };
           return details;
         });
       `;
-      // The result of this eval will be handled in the callback below.
       break;
     case 'SET_INPUT_VALUE':
       if (!commandDetails.selector || typeof commandDetails.value === 'undefined') {
@@ -73,23 +76,20 @@ function executeInInspectedPage(commandDetails) {
           const el = document.querySelector(${JSON.stringify(commandDetails.selector)});
           if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
             el.value = ${JSON.stringify(commandDetails.value)};
-            console.log('[AgentAction] Set value for selector: ${commandDetails.selector}');
-            // Optionally, dispatch input/change events if needed for some frameworks
-            // el.dispatchEvent(new Event('input', { bubbles: true }));
-            // el.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log('[AgentAction] Set value for selector: ' + ${JSON.stringify(commandDetails.selector)});
+            // el.dispatchEvent(new Event('input', { bubbles: true })); // Uncomment if needed
+            // el.dispatchEvent(new Event('change', { bubbles: true }));// Uncomment if needed
             return { success: true, selector: ${JSON.stringify(commandDetails.selector)}, valueSet: ${JSON.stringify(commandDetails.value)} };
           } else {
-            console.error('[AgentActionError] Could not find input/textarea for selector: ${commandDetails.selector}');
+            console.error('[AgentActionError] Could not find input/textarea for selector: ' + ${JSON.stringify(commandDetails.selector)});
             return { success: false, selector: ${JSON.stringify(commandDetails.selector)}, error: 'Element not found or not an input/textarea' };
           }
         })();
       `;
-      // Result will be logged by the eval's callback
       break;
     default:
-      // If it's not a known command, just log the raw data as before
-      logToInspectedPageConsole(commandDetails, '[AgentMSG_Unknown]');
-      return; // exit early
+      logToInspectedPageConsole(commandDetails, '[AgentMSG_UnknownType]');
+      return; 
   }
 
   if (evalString) {
@@ -99,17 +99,15 @@ function executeInInspectedPage(commandDetails) {
         if (isException) {
           console.error(`Error executing command ${commandType} in inspected window:`, isException);
           logToInspectedPageConsole({ error: `Failed to execute ${commandType}`, details: isException }, "[AgentActionError]");
-          statusDiv.textContent = `Error for ${commandType}. See panel console.`;
+          if (statusDiv) statusDiv.textContent = `Error for ${commandType}. See panel console.`;
         } else {
           console.log(`Result of ${commandType}:`, result);
-          // For QUERY_SELECTOR_ALL, the result IS the data we want to log.
-          // For other commands, result might be undefined or a simple confirmation.
           if (commandType === 'QUERY_SELECTOR_ALL') {
             logToInspectedPageConsole({ query: commandDetails.selector, results: result, requestId: commandDetails.requestId }, "[AgentQueryResult]");
           } else if (commandType === 'SET_INPUT_VALUE') {
-             logToInspectedPageConsole(result, "[AgentActionReport]"); // Log success/failure object
+             logToInspectedPageConsole(result, "[AgentActionReport]");
           }
-          // No need for generic status update here unless specific error
+          // For other commands, the console.log within their evalString serves as confirmation.
         }
       }
     );
@@ -119,46 +117,43 @@ function executeInInspectedPage(commandDetails) {
 
 function connect() {
   if (!panelPort) {
-    // Establish a long-lived connection with the background script
     panelPort = chrome.runtime.connect({ name: "devtools-panel-" + chrome.devtools.inspectedWindow.tabId });
     console.log("Panel: Port connected to background script.");
 
-    // Listen for messages from the background script
     panelPort.onMessage.addListener(function(message) {
       console.log("Panel: Received message from background:", message);
       if (message.type === "WEBSOCKET_MESSAGE") {
-        logToInspectedPage(message.data);
-        // Optionally, display the message in the panel too
-        // const logEntry = document.createElement('div');
-        // logEntry.textContent = JSON.stringify(message.data);
-        // document.body.appendChild(logEntry);
-      } else if (message.type === "WEBSOCKET_STATUS") {
-        statusDiv.textContent = `Status: ${message.status}`;
-        if (message.status === "Connected") {
-          connectButton.style.display = 'none';
-          disconnectButton.style.display = 'inline-block';
-          connectionNameInput.disabled = true;
+        if (message.data) {
+            executeInInspectedPage(message.data); // CORRECTED: Call executeInInspectedPage
         } else {
-          connectButton.style.display = 'inline-block';
-          disconnectButton.style.display = 'none';
-          connectionNameInput.disabled = false;
+            logToInspectedPageConsole({error: "Received empty data in WEBSOCKET_MESSAGE"}, "[AgentMSGError]");
+        }
+      } else if (message.type === "WEBSOCKET_STATUS") {
+        if (statusDiv) statusDiv.textContent = `Status: ${message.status}`; // Added null check for statusDiv
+        if (message.status === "Connected") {
+          if (connectButton) connectButton.style.display = 'none';
+          if (disconnectButton) disconnectButton.style.display = 'inline-block';
+          if (connectionNameInput) connectionNameInput.disabled = true;
+        } else {
+          if (connectButton) connectButton.style.display = 'inline-block';
+          if (disconnectButton) disconnectButton.style.display = 'none';
+          if (connectionNameInput) connectionNameInput.disabled = false;
           currentConnectionName = null;
         }
       }
     });
 
-    // Handle disconnection from the background script
     panelPort.onDisconnect.addListener(function() {
       console.warn("Panel: Port disconnected from background script.");
-      statusDiv.textContent = "Status: Disconnected from background. Reload DevTools?";
+      if (statusDiv) statusDiv.textContent = "Status: Disconnected from background. Reload DevTools?";
       panelPort = null;
-      connectButton.style.display = 'inline-block';
-      disconnectButton.style.display = 'none';
-      connectionNameInput.disabled = false;
+      if (connectButton) connectButton.style.display = 'inline-block';
+      if (disconnectButton) disconnectButton.style.display = 'none';
+      if (connectionNameInput) connectionNameInput.disabled = false;
     });
   }
 
-  const connectionNameVal = connectionNameInput.value.trim(); // Renamed to avoid conflict
+  const connectionNameVal = connectionNameInput ? connectionNameInput.value.trim() : "";
   if (connectionNameVal) {
     currentConnectionName = connectionNameVal;
     console.log(`Panel: Attempting to connect WebSocket for name: ${currentConnectionName} on tab ${chrome.devtools.inspectedWindow.tabId}`);
@@ -167,9 +162,9 @@ function connect() {
       tabId: chrome.devtools.inspectedWindow.tabId,
       connectionName: currentConnectionName
     });
-    statusDiv.textContent = "Status: Connecting...";
+    if (statusDiv) statusDiv.textContent = "Status: Connecting...";
   } else {
-    statusDiv.textContent = "Status: Please enter a connection name.";
+    if (statusDiv) statusDiv.textContent = "Status: Please enter a connection name.";
   }
 }
 
@@ -183,14 +178,16 @@ function disconnect() {
     });
   } else {
     console.warn("Panel: No active connection or port to disconnect.");
-    statusDiv.textContent = "Status: Not Connected";
-    connectButton.style.display = 'inline-block';
-    disconnectButton.style.display = 'none';
-    connectionNameInput.disabled = false;
+    if (statusDiv) statusDiv.textContent = "Status: Not Connected";
+    if (connectButton) connectButton.style.display = 'inline-block';
+    if (disconnectButton) disconnectButton.style.display = 'none';
+    if (connectionNameInput) connectionNameInput.disabled = false;
   }
 }
 
-connectButton.addEventListener('click', connect);
-disconnectButton.addEventListener('click', disconnect);
+// Add null checks for elements in case panel.html isn't fully loaded or is different
+if (connectButton) connectButton.addEventListener('click', connect);
+if (disconnectButton) disconnectButton.addEventListener('click', disconnect);
 
 console.log("Panel.js loaded for tab: " + chrome.devtools.inspectedWindow.tabId);
+
