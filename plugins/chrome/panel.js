@@ -9,14 +9,12 @@ let currentConnectionName = null;
 // Function to log any data to the inspected page's console
 function logToInspectedPageConsole(data, prefix = '[AgentMSG]') {
   const jsonStringData = JSON.stringify(data);
-  // Ensure prefix is a string literal in the eval'd code
   const evalString = `console.log(${JSON.stringify(prefix)}, ${jsonStringData});`;
   chrome.devtools.inspectedWindow.eval(
     evalString,
     function(result, isException) {
       if (isException) {
         console.error('Error logging to inspected window console:', isException);
-        // statusDiv.textContent = 'Error logging. See DevTools console (of this panel) for details.';
       }
     }
   );
@@ -25,7 +23,6 @@ function logToInspectedPageConsole(data, prefix = '[AgentMSG]') {
 // Function to execute specific commands in the inspected page
 function executeInInspectedPage(commandDetails) {
   let evalString = "";
-  // Ensure commandDetails and its type property exist
   if (!commandDetails || typeof commandDetails.type === 'undefined') {
     logToInspectedPageConsole({ error: "Command details or type is missing", received: commandDetails }, "[AgentActionError]");
     return;
@@ -36,7 +33,6 @@ function executeInInspectedPage(commandDetails) {
 
   switch (commandType) {
     case 'SCROLL_TO_TOP':
-      // Using your custom scroll target if present, otherwise window
       evalString = `
         (() => {
           const scroller = document.querySelector("ms-autoscroll-container") || window;
@@ -46,7 +42,6 @@ function executeInInspectedPage(commandDetails) {
       `;
       break;
     case 'SCROLL_TO_BOTTOM':
-      // Using your custom scroll target
       evalString = `
         (() => {
           const scroller = document.querySelector("ms-autoscroll-container") || document.body;
@@ -59,7 +54,6 @@ function executeInInspectedPage(commandDetails) {
     case 'SCROLL_DELTA':
       const deltaY = commandDetails.deltaY || 0;
       const deltaX = commandDetails.deltaX || 0;
-      // Using your custom scroll target
       evalString = `
         (() => {
           const scroller = document.querySelector("ms-autoscroll-container") || window;
@@ -80,9 +74,9 @@ function executeInInspectedPage(commandDetails) {
             tagName: el.tagName,
             id: el.id,
             className: el.className,
-            rect: el.getBoundingClientRect ? el.getBoundingClientRect() : {}, // Ensure rect is an object
-            innerText: el.innerText ? el.innerText.substring(0, 100) : '',    // Ensure string
-            outerHTML: el.outerHTML ? el.outerHTML.substring(0, 200) : ''  // Ensure string
+            rect: el.getBoundingClientRect ? el.getBoundingClientRect() : {},
+            innerText: el.innerText ? el.innerText.substring(0, 100) : '',
+            outerHTML: el.outerHTML ? el.outerHTML.substring(0, 200) : ''
           };
           return details;
         });
@@ -93,18 +87,27 @@ function executeInInspectedPage(commandDetails) {
         logToInspectedPageConsole({ error: "Selector or value missing for SET_INPUT_VALUE", details: commandDetails }, "[AgentActionError]");
         return;
       }
+      const shouldSubmit = JSON.stringify(commandDetails.submit);
+      const submitSelector = JSON.stringify((commandDetails.submitSelector || "").trim());
       evalString = `
         (() => {
           const el = document.querySelector(${JSON.stringify(commandDetails.selector)});
-          const submitSelector = (${JSON.stringify(commandDetails.submitSelector)} || "").trim();
-          const submitButton = (submitSelector.length > 0) ? document.querySelector(submitSelector) : null;
 
           if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+            el.focus(); // Focus the element first
             el.value = ${JSON.stringify(commandDetails.value)};
-            console.log('[AgentAction] Set value for selector: ' + ${JSON.stringify(commandDetails.selector)});
-            // el.dispatchEvent(new Event('input', { bubbles: true })); // Uncomment if needed
-            // el.dispatchEvent(new Event('change', { bubbles: true }));// Uncomment if needed
+            // Dispatch 'input' and 'change' events to mimic user interaction
+            el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+            // el.blur(); // Optionally blur after setting
+            console.log('[AgentAction] Set value and dispatched events for selector: ' + ${JSON.stringify(commandDetails.selector)});
 
+            if (${shouldSubmit}) {
+                const submitSelector = ${submitSelector}
+                const submitButton = document.querySelector(submitSelector);
+                const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+                submitButton.dispatchEvent(clickEvent);
+            }
             return { success: true, selector: ${JSON.stringify(commandDetails.selector)}, valueSet: ${JSON.stringify(commandDetails.value)} };
           } else {
             console.error('[AgentActionError] Could not find input/textarea for selector: ' + ${JSON.stringify(commandDetails.selector)});
@@ -113,7 +116,7 @@ function executeInInspectedPage(commandDetails) {
         })();
       `;
       break;
-    case 'CLICK_ELEMENT': // New case
+    case 'CLICK_ELEMENT':
       if (!commandDetails.selector) {
         logToInspectedPageConsole({ error: "Selector missing for CLICK_ELEMENT", details: commandDetails }, "[AgentActionError]");
         return;
@@ -121,13 +124,19 @@ function executeInInspectedPage(commandDetails) {
       evalString = `
         (() => {
           const el = document.querySelector(${JSON.stringify(commandDetails.selector)});
-          if (el && typeof el.click === 'function') {
-            el.click();
-            console.log('[AgentAction] Clicked element with selector: ' + ${JSON.stringify(commandDetails.selector)});
+          if (el instanceof HTMLElement) { // Check if it's an HTMLElement
+            // Create and dispatch a mouse event
+            const clickEvent = new MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              view: window
+            });
+            el.dispatchEvent(clickEvent);
+            console.log('[AgentAction] Dispatched click event on element with selector: ' + ${JSON.stringify(commandDetails.selector)});
             return { success: true, selector: ${JSON.stringify(commandDetails.selector)} };
           } else {
-            console.error('[AgentActionError] Could not find clickable element for selector: ' + ${JSON.stringify(commandDetails.selector)});
-            return { success: false, selector: ${JSON.stringify(commandDetails.selector)}, error: 'Element not found or not clickable' };
+            console.error('[AgentActionError] Could not find HTMLElement for click selector: ' + ${JSON.stringify(commandDetails.selector)});
+            return { success: false, selector: ${JSON.stringify(commandDetails.selector)}, error: 'Element not found or not an HTMLElement' };
           }
         })();
       `;
@@ -149,10 +158,9 @@ function executeInInspectedPage(commandDetails) {
           console.log(`Result of ${commandType}:`, result);
           if (commandType === 'QUERY_SELECTOR_ALL') {
             logToInspectedPageConsole({ query: commandDetails.selector, results: result, requestId: commandDetails.requestId }, "[AgentQueryResult]");
-          } else if (commandType === 'SET_INPUT_VALUE' || commandType === 'CLICK_ELEMENT') { // Updated to include CLICK_ELEMENT
+          } else if (commandType === 'SET_INPUT_VALUE' || commandType === 'CLICK_ELEMENT') {
              logToInspectedPageConsole(result, "[AgentActionReport]");
           }
-          // For other commands, the console.log within their evalString serves as confirmation.
         }
       }
     );

@@ -84,10 +84,10 @@ var clientCmdToolCallRespond = &cobra.Command{
 			panic(err)
 		}
 		sendCommand("SET_INPUT_VALUE", map[string]any{
-			"selector":        "ms-function-call-chunk textarea",
-			"value":           value,
-			"submit":          submit,
-			"submit-selector": `ms-function-call-chunk footer button[aria-label='Submit']`,
+			"selector":       "ms-function-call-chunk textarea",
+			"value":          value,
+			"submit":         submit,
+			"submitSelector": `ms-function-call-chunk footer button[aria-label='Submit']`,
 		})
 	},
 }
