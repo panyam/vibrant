@@ -78,13 +78,16 @@ var clientCmdToolCallRespond = &cobra.Command{
 	Long:  "Responds to a toolcalls",
 	Run: func(cmd *cobra.Command, args []string) {
 		fromClipboard, _ := cmd.Flags().GetBool("from-clipboard")
+		submit, _ := cmd.Flags().GetBool("submit")
 		value, err := tools.GetInputFromUserOrClipboard(fromClipboard)
 		if err != nil {
 			panic(err)
 		}
 		sendCommand("SET_INPUT_VALUE", map[string]any{
-			"selector": "ms-function-call-chunk textarea",
-			"value":    value,
+			"selector":        "ms-function-call-chunk textarea",
+			"value":           value,
+			"submit":          submit,
+			"submit-selector": `ms-function-call-chunk footer button[aria-label='Submit']`,
 		})
 	},
 }
@@ -99,6 +102,7 @@ func init() {
 	clientCmd.AddCommand(clientCmdToolCallRespond)
 
 	clientCmdToolCallRespond.Flags().BoolP("from-clipboard", "c", false, "Read input from clipboard instead of from stdin")
+	clientCmdToolCallRespond.Flags().BoolP("submit", "s", false, "Induce a 'submit' after the value is set on the respectve 'send' button")
 
 	clientCmd.PersistentFlags().StringVarP(&currentClientId, "client-id", "i", "", "ID of the client to default to.  If not provided then the environment VIBRANT_CLIENT_ID is used.")
 }

@@ -1,4 +1,4 @@
-const connectionNameInput = document.getElementById('connectionName');
+const connectionNameInput =  document.getElementById('connectionName');
 const connectButton = document.getElementById('connectButton');
 const disconnectButton = document.getElementById('disconnectButton');
 const statusDiv = document.getElementById('status');
@@ -36,15 +36,37 @@ function executeInInspectedPage(commandDetails) {
 
   switch (commandType) {
     case 'SCROLL_TO_TOP':
-      evalString = `document.querySelector("ms-autoscroll-container").scrollTo(0, 0); console.log('[AgentAction] Scrolled to top');`;
+      // Using your custom scroll target if present, otherwise window
+      evalString = `
+        (() => {
+          const scroller = document.querySelector("ms-autoscroll-container") || window;
+          scroller.scrollTo(0, 0);
+          console.log('[AgentAction] Scrolled to top');
+        })();
+      `;
       break;
     case 'SCROLL_TO_BOTTOM':
-      evalString = `a = document.querySelector("ms-autoscroll-container") ; a.scrollTo(0, a.scrollHeight); console.log('[AgentAction] Scrolled to top');`;
+      // Using your custom scroll target
+      evalString = `
+        (() => {
+          const scroller = document.querySelector("ms-autoscroll-container") || document.body;
+          let target = scroller === window ? document.body.scrollHeight : scroller.scrollHeight;
+          (scroller === window ? window : scroller).scrollTo(0, target);
+          console.log('[AgentAction] Scrolled to bottom');
+        })();
+      `;
       break;
     case 'SCROLL_DELTA':
       const deltaY = commandDetails.deltaY || 0;
       const deltaX = commandDetails.deltaX || 0;
-      evalString = `a = document.querySelector("ms-autoscroll-container") ; a.scrollBy(${deltaX}, ${deltaY}); console.log('[AgentAction] Scrolled by deltaX: ${deltaX}, deltaY: ${deltaY}');`;
+      // Using your custom scroll target
+      evalString = `
+        (() => {
+          const scroller = document.querySelector("ms-autoscroll-container") || window;
+          (scroller === window ? window : scroller).scrollBy(${deltaX}, ${deltaY});
+          console.log('[AgentAction] Scrolled by deltaX: ${deltaX}, deltaY: ${deltaY}');
+        })();
+      `;
       break;
     case 'QUERY_SELECTOR_ALL':
       if (!commandDetails.selector) {
@@ -74,15 +96,38 @@ function executeInInspectedPage(commandDetails) {
       evalString = `
         (() => {
           const el = document.querySelector(${JSON.stringify(commandDetails.selector)});
+          const submitSelector = (${JSON.stringify(commandDetails.submitSelector)} || "").trim();
+          const submitButton = (submitSelector.length > 0) ? document.querySelector(submitSelector) : null;
+
           if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
             el.value = ${JSON.stringify(commandDetails.value)};
             console.log('[AgentAction] Set value for selector: ' + ${JSON.stringify(commandDetails.selector)});
             // el.dispatchEvent(new Event('input', { bubbles: true })); // Uncomment if needed
             // el.dispatchEvent(new Event('change', { bubbles: true }));// Uncomment if needed
+
             return { success: true, selector: ${JSON.stringify(commandDetails.selector)}, valueSet: ${JSON.stringify(commandDetails.value)} };
           } else {
             console.error('[AgentActionError] Could not find input/textarea for selector: ' + ${JSON.stringify(commandDetails.selector)});
             return { success: false, selector: ${JSON.stringify(commandDetails.selector)}, error: 'Element not found or not an input/textarea' };
+          }
+        })();
+      `;
+      break;
+    case 'CLICK_ELEMENT': // New case
+      if (!commandDetails.selector) {
+        logToInspectedPageConsole({ error: "Selector missing for CLICK_ELEMENT", details: commandDetails }, "[AgentActionError]");
+        return;
+      }
+      evalString = `
+        (() => {
+          const el = document.querySelector(${JSON.stringify(commandDetails.selector)});
+          if (el && typeof el.click === 'function') {
+            el.click();
+            console.log('[AgentAction] Clicked element with selector: ' + ${JSON.stringify(commandDetails.selector)});
+            return { success: true, selector: ${JSON.stringify(commandDetails.selector)} };
+          } else {
+            console.error('[AgentActionError] Could not find clickable element for selector: ' + ${JSON.stringify(commandDetails.selector)});
+            return { success: false, selector: ${JSON.stringify(commandDetails.selector)}, error: 'Element not found or not clickable' };
           }
         })();
       `;
@@ -104,7 +149,7 @@ function executeInInspectedPage(commandDetails) {
           console.log(`Result of ${commandType}:`, result);
           if (commandType === 'QUERY_SELECTOR_ALL') {
             logToInspectedPageConsole({ query: commandDetails.selector, results: result, requestId: commandDetails.requestId }, "[AgentQueryResult]");
-          } else if (commandType === 'SET_INPUT_VALUE') {
+          } else if (commandType === 'SET_INPUT_VALUE' || commandType === 'CLICK_ELEMENT') { // Updated to include CLICK_ELEMENT
              logToInspectedPageConsole(result, "[AgentActionReport]");
           }
           // For other commands, the console.log within their evalString serves as confirmation.
@@ -124,12 +169,12 @@ function connect() {
       console.log("Panel: Received message from background:", message);
       if (message.type === "WEBSOCKET_MESSAGE") {
         if (message.data) {
-            executeInInspectedPage(message.data); // CORRECTED: Call executeInInspectedPage
+            executeInInspectedPage(message.data);
         } else {
             logToInspectedPageConsole({error: "Received empty data in WEBSOCKET_MESSAGE"}, "[AgentMSGError]");
         }
       } else if (message.type === "WEBSOCKET_STATUS") {
-        if (statusDiv) statusDiv.textContent = `Status: ${message.status}`; // Added null check for statusDiv
+        if (statusDiv) statusDiv.textContent = `Status: ${message.status}`; 
         if (message.status === "Connected") {
           if (connectButton) connectButton.style.display = 'none';
           if (disconnectButton) disconnectButton.style.display = 'inline-block';
@@ -185,9 +230,7 @@ function disconnect() {
   }
 }
 
-// Add null checks for elements in case panel.html isn't fully loaded or is different
 if (connectButton) connectButton.addEventListener('click', connect);
 if (disconnectButton) disconnectButton.addEventListener('click', disconnect);
 
 console.log("Panel.js loaded for tab: " + chrome.devtools.inspectedWindow.tabId);
-
