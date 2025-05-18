@@ -36,7 +36,7 @@ func sendCommand(cmd string, payload map[string]any) any {
 	if err != nil {
 		panic(err)
 	}
-	log.Println("Resp: ", response)
+	// log.Println("Resp: ", response)
 	return response
 }
 

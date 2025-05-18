@@ -51,10 +51,10 @@ func getUserMessageTillEOF() (string, error) {
 }
 
 func GetInputFromUserOrClipboard(fromClipboard bool) (input string, err error) {
-	fmt.Print("\u001b[94mEnter Tool Call Params\u001b[0m: ")
 	if fromClipboard {
 		input = string(clipboard.Read(clipboard.FmtText))
 	} else {
+		fmt.Print("\u001b[94mEnter Tool Call Params\u001b[0m: ")
 		input, err = getUserMessageTillEOF()
 	}
 	return
