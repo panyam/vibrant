@@ -92,6 +92,26 @@ var clientCmdToolCallRespond = &cobra.Command{
 	},
 }
 
+var clientCmdSendPrompt = &cobra.Command{
+	Use:   "send",
+	Short: "Sends a prompt to the llm",
+	Long:  "Sends a prompt to the llm",
+	Run: func(cmd *cobra.Command, args []string) {
+		fromClipboard, _ := cmd.Flags().GetBool("from-clipboard")
+		submit, _ := cmd.Flags().GetBool("submit")
+		value, err := tools.GetInputFromUserOrClipboard(fromClipboard)
+		if err != nil {
+			panic(err)
+		}
+		sendCommand("SET_INPUT_VALUE", map[string]any{
+			"selector":       "ms-prompt-input-wrapper textarea",
+			"value":          value,
+			"submit":         submit,
+			"submitSelector": `ms-prompt-input-wrapper button[aria-label='Run']`,
+		})
+	},
+}
+
 func init() {
 	// Add 'agents' command to root
 	AddCommand(clientCmd)
@@ -100,9 +120,13 @@ func init() {
 	clientCmd.AddCommand(clientCmdScrollToTop)
 	clientCmd.AddCommand(clientCmdScrollToBottom)
 	clientCmd.AddCommand(clientCmdToolCallRespond)
+	clientCmd.AddCommand(clientCmdSendPrompt)
 
 	clientCmdToolCallRespond.Flags().BoolP("from-clipboard", "c", false, "Read input from clipboard instead of from stdin")
 	clientCmdToolCallRespond.Flags().BoolP("submit", "s", false, "Induce a 'submit' after the value is set on the respectve 'send' button")
+
+	clientCmdSendPrompt.Flags().BoolP("from-clipboard", "c", false, "Read input from clipboard instead of from stdin")
+	clientCmdSendPrompt.Flags().BoolP("submit", "s", false, "Induce a 'submit' after the value is set on the respectve 'send' button")
 
 	clientCmd.PersistentFlags().StringVarP(&currentClientId, "client-id", "i", "", "ID of the client to default to.  If not provided then the environment VIBRANT_CLIENT_ID is used.")
 }

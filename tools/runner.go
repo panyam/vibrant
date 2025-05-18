@@ -70,7 +70,6 @@ func ToolsJson() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("JSON: ")
 	fmt.Println(string(b))
 }
 
