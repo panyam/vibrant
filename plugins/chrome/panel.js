@@ -109,6 +109,7 @@ function executeInInspectedPage(commandDetails) {
             if (${shouldSubmit} && ${submitSelector} !== '""') {
                 const submitBtn = document.querySelector(${submitSelector});
                 if (submitBtn instanceof HTMLElement) {
+                    submitBtn.removeAttribute("disabled")
                     const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
                     submitBtn.dispatchEvent(clickEvent);
                     console.log('[AgentAction] Also clicked submit button: ' + ${submitSelector});
