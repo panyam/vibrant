@@ -1,15 +1,18 @@
 package web
 
 import (
+	"encoding/json" // For parsing request body and constructing messages
+	"io"            // For reading request body
 	"log"
 	"net/http"
-	"strings" // Added for path manipulation
+	"strings"
 	"sync"
+	"time" // For requestId generation (simple example)
 
 	"github.com/gorilla/websocket"
 )
 
-// upgrader is used to upgrade HTTP connections to WebSocket connections.
+// upgrader (no change)
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -20,20 +23,18 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// connectionManager holds active WebSocket connections.
+// connectionManager and its methods (no change)
 type connectionManager struct {
 	sync.RWMutex
 	connections map[string]map[*websocket.Conn]bool
 }
 
-// NewConnectionManager creates a new connection manager.
 func NewConnectionManager() *connectionManager {
 	return &connectionManager{
 		connections: make(map[string]map[*websocket.Conn]bool),
 	}
 }
 
-// AddConnection registers a new WebSocket connection.
 func (cm *connectionManager) AddConnection(connectionName string, conn *websocket.Conn) {
 	cm.Lock()
 	defer cm.Unlock()
@@ -44,7 +45,6 @@ func (cm *connectionManager) AddConnection(connectionName string, conn *websocke
 	log.Printf("Registered new connection for agent: %s. Total for this agent: %d", connectionName, len(cm.connections[connectionName]))
 }
 
-// RemoveConnection unregisters a WebSocket connection.
 func (cm *connectionManager) RemoveConnection(connectionName string, conn *websocket.Conn) {
 	cm.Lock()
 	defer cm.Unlock()
@@ -60,64 +60,49 @@ func (cm *connectionManager) RemoveConnection(connectionName string, conn *webso
 	}
 }
 
-// BroadcastToAgent sends a message to all clients connected under a specific agent name.
 func (cm *connectionManager) BroadcastToAgent(connectionName string, messageType int, message []byte) {
 	cm.RLock()
 	defer cm.RUnlock()
-
 	subscribers, ok := cm.connections[connectionName]
 	if !ok {
-		// log.Printf("No subscribers found for agent: %s", connectionName)
+		log.Printf("BroadcastToAgent: No subscribers found for agent: %s", connectionName)
 		return
 	}
-
-	log.Printf("Broadcasting message to %d subscribers for agent: %s", len(subscribers), connectionName)
+	log.Printf("Broadcasting message to %d subscribers for agent: %s, Message: %s", len(subscribers), connectionName, string(message))
 	for conn := range subscribers {
 		err := conn.WriteMessage(messageType, message)
 		if err != nil {
-			log.Printf("Error writing message to subscriber for agent %s: %v. Removing connection.", connectionName, err)
-			// Clean up the bad connection. Need to acquire write lock.
-			// Schedule removal outside the read lock or use a more complex cleanup mechanism.
-			// For simplicity here, we'll log and the read loop on the other side will eventually detect closure.
+			log.Printf("Error writing message to subscriber for agent %s: %v.", connectionName, err)
 		}
 	}
 }
 
-// Global connection manager instance
 var manager = NewConnectionManager()
 
-// serveWs handles WebSocket requests from the peer.
-// The path is expected to be /agent/{connectionName}/subscribe from the perspective of this mux
+// serveWs (no change from your provided version)
 func serveWs(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 
-	// Expected path: "agent/{connectionName}/subscribe"
 	if len(parts) != 3 || parts[0] != "agent" || parts[2] != "subscribe" {
 		log.Printf("Invalid WebSocket path structure for serveWs: %s. Expected /agent/{connectionName}/subscribe", path)
 		http.Error(w, "Invalid WebSocket path structure.", http.StatusBadRequest)
 		return
 	}
 	connectionName := parts[1]
-
 	log.Printf("Incoming WebSocket connection attempt for agent: %s from %s (path: %s)", connectionName, r.RemoteAddr, r.URL.Path)
-
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Failed to upgrade WebSocket connection for agent %s: %v", connectionName, err)
 		return
 	}
 	defer conn.Close()
-
 	manager.AddConnection(connectionName, conn)
 	defer manager.RemoveConnection(connectionName, conn)
-
 	welcomeMsg := []byte(`{"type": "status", "message": "Successfully connected to agent ` + connectionName + `"}`)
 	if err := conn.WriteMessage(websocket.TextMessage, welcomeMsg); err != nil {
 		log.Printf("Failed to send welcome message to agent %s: %v", connectionName, err)
-		// Continue even if welcome message fails
 	}
-
 	for {
 		messageType, p, err := conn.ReadMessage()
 		if err != nil {
@@ -134,43 +119,133 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// NewServeMux creates and configures an http.ServeMux with the WebSocket handler.
-// It expects to be mounted under a prefix like "/agents", so paths here are relative to that.
+// handleAgentCommandPost handles POST requests to /agents/<connectionName>/<commandType>
+func handleAgentCommandPost(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	path := strings.Trim(r.URL.Path, "/")
+	parts := strings.Split(path, "/")
+
+	// Expected path structure: "agents/{connectionName}/{commandType}"
+	if len(parts) != 3 || parts[0] != "agents" {
+		log.Printf("Invalid command path structure: %s. Expected /agents/{connectionName}/{commandType}", r.URL.Path)
+		http.Error(w, "Invalid command path structure", http.StatusBadRequest)
+		return
+	}
+
+	connectionName := parts[1]
+	commandType := parts[2] // This is the actual command type like SCROLL_TO_TOP, QUERY_SELECTOR_ALL etc.
+
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Printf("Error reading request body for command %s on agent %s: %v", commandType, connectionName, err)
+		http.Error(w, "Error reading request body", http.StatusInternalServerError)
+		return
+	}
+	defer r.Body.Close()
+
+	// Unmarshal the body to a map to inject/override the 'type' field
+	var commandPayload map[string]interface{}
+	if len(bodyBytes) > 0 {
+		err = json.Unmarshal(bodyBytes, &commandPayload)
+		if err != nil {
+			// If body is not valid JSON, but commandType doesn't require a body (e.g. SCROLL_TO_TOP)
+			// we might proceed, or decide to be strict. For now, let's be strict if body exists.
+			log.Printf("Error unmarshalling JSON body for command %s on agent %s: %v. Body: %s", commandType, connectionName, err, string(bodyBytes))
+			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+			return
+		}
+	} else {
+		commandPayload = make(map[string]interface{})
+	}
+
+	// Set/Override the type from the URL path parameter
+	// Convert commandType from path (e.g., "scrollToTop") to the message type ("SCROLL_TO_TOP")
+	// For simplicity, we'll assume commandType in URL is already in the correct case (e.g. SCROLL_TO_TOP)
+	// In a real app, you might want to map camelCase path to UPPER_SNAKE_CASE type or vice-versa.
+	commandPayload["type"] = commandType
+
+	// Add a requestId for commands that might expect a response or need tracking (like querySelectorAll)
+	if commandType == "QUERY_SELECTOR_ALL" {
+		if _, ok := commandPayload["requestId"]; !ok {
+			commandPayload["requestId"] = time.Now().UnixNano() // Simple unique ID
+		}
+	}
+
+	finalMessageBytes, err := json.Marshal(commandPayload)
+	if err != nil {
+		log.Printf("Error marshalling final command message for %s on agent %s: %v", commandType, connectionName, err)
+		http.Error(w, "Error preparing message", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Received command via POST: Agent=%s, CommandType=%s, Body=%s", connectionName, commandType, string(bodyBytes))
+	manager.BroadcastToAgent(connectionName, websocket.TextMessage, finalMessageBytes)
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":      "success",
+		"agent":       connectionName,
+		"commandType": commandType,
+		"message":     "Command broadcasted",
+	})
+}
+
 func NewServeMux() *http.ServeMux {
 	mux := http.NewServeMux()
 
-	// This handler will match /agent/{connectionName}/subscribe
-	// after http.StripPrefix("/agents", agentsMux) in main.go
-	mux.HandleFunc("/agent/", serveWs) // serveWs will further parse the path
+	// Handles WebSocket connections: /agent/{connectionName}/subscribe
+	mux.HandleFunc("/agent/", serveWs) // serveWs parses the full path like /agent/name/subscribe
 
-	// Test broadcast endpoint, relative to the mount point of this mux.
-	// So, if mounted at /agents, this becomes /agents/test_broadcast
+	// Handles command POSTs: /agents/{connectionName}/{commandType}
+	mux.HandleFunc("/agents/", handleAgentCommandPost) // handleAgentCommandPost parses this
+
+	// Test broadcast endpoint (kept for now)
 	mux.HandleFunc("/test_broadcast", func(w http.ResponseWriter, r *http.Request) {
 		agentName := r.URL.Query().Get("agent")
 		message := r.URL.Query().Get("msg")
+		commandType := r.URL.Query().Get("type") // Optional type for GET test
+
 		if agentName == "" || message == "" {
 			http.Error(w, "Missing 'agent' or 'msg' query parameter", http.StatusBadRequest)
 			return
 		}
-		log.Printf("Test broadcast triggered for agent '%s' with message '%s'", agentName, message)
-		
-		jsonData := `{"event": "test", "payload": "` + message + `"}` // Basic JSON construction
-		manager.BroadcastToAgent(agentName, websocket.TextMessage, []byte(jsonData))
-		
+		if commandType == "" {
+			commandType = "test" // Default if not specified
+		}
+
+		log.Printf("Test broadcast (GET) triggered for agent '%s', type '%s', message '%s'", agentName, commandType, message)
+
+		// Construct a JSON message - this matches what the Chrome extension expects
+		payloadMap := map[string]interface{}{"payload": message}
+		if commandType == "SCROLL_DELTA" { // Example for specific GET test
+			payloadMap["deltaY"] = 100 // Default test delta
+		}
+
+		jsonDataMap := map[string]interface{}{
+			"type": commandType,
+		}
+		// Merge payloadMap into jsonDataMap
+		for k, v := range payloadMap {
+			jsonDataMap[k] = v
+		}
+
+		jsonDataBytes, _ := json.Marshal(jsonDataMap)
+		manager.BroadcastToAgent(agentName, websocket.TextMessage, jsonDataBytes)
+
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Broadcast initiated for agent: " + agentName))
+		w.Write([]byte("GET Test Broadcast initiated for agent: " + agentName + " with type " + commandType))
 	})
 
-	log.Println("Websocket ServeMux configured. Mount under a prefix (e.g., /agents).")
-	log.Println("WebSocket handler expects paths like: /agent/{connectionName}/subscribe (relative to mount point)")
-	log.Println("Test broadcast endpoint expects: /test_broadcast?agent=<name>&msg=<message> (relative to mount point)")
+	log.Println("WebSocket ServeMux configured.")
+	log.Println("POST commands to: /agents/{connectionName}/{COMMAND_TYPE} (e.g. /agents/myClient/SCROLL_TO_TOP)")
+	log.Println("WebSocket connections at: /agent/{connectionName}/subscribe")
 	return mux
 }
 
-// GetConnectionManager returns the global connection manager instance.
-// This allows other parts of your application (outside this package)
-// to access the manager and broadcast messages if needed, though it's often
-// better to expose a dedicated broadcasting function or channel.
 func GetConnectionManager() *connectionManager {
-    return manager
+	return manager
 }
