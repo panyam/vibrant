@@ -38,7 +38,8 @@ var runToolCmd = &cobra.Command{
 	Args: cobra.MinimumNArgs(1), // metric_type, system_name, analysis_name
 	Run: func(cmd *cobra.Command, args []string) {
 		log.Println("Args: ", args)
-		tools.RunTool(args[0], args[1:])
+		fromClipboard, _ := cmd.Flags().GetBool("from-clipboard")
+		tools.RunTool(fromClipboard, args[0], args[1:])
 	},
 }
 
@@ -50,6 +51,7 @@ func init() {
 	AddCommand(toolsCmd)
 	toolsCmd.AddCommand(toolsJsonCmd)
 	toolsCmd.AddCommand(runToolCmd)
+	runToolCmd.Flags().BoolP("from-clipboard", "c", false, "Read input from clipboard instead of from stdin")
 
 	/*
 		toolsCmd.Flags().StringP("output", "o", "", "Output file path for the plot (e.g., plot.png)")
