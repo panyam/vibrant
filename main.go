@@ -41,6 +41,7 @@ func init() {
 	tools = map[string]Tool{
 		"read_file":  &ReadFile{ProjectRoot: "./"},
 		"list_files": &ListFiles{ProjectRoot: "./"},
+		"edit_file":  &EditFile{ProjectRoot: "./"},
 	}
 }
 

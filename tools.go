@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Parameter struct {
@@ -164,4 +166,82 @@ func (r *ListFiles) Run(args []string) (any, error) {
 	}
 
 	return entries, err
+}
+
+type EditFile struct {
+	ProjectRoot string
+}
+
+func (r *EditFile) Name() string {
+	return "edit_file"
+}
+
+func (r *EditFile) Description() string {
+	return `Make edits to a text file.
+
+Replaces 'old_str' with 'new_str' in the given file. 'old_str' and 'new_str' MUST be different from each other.
+
+If the file specified with path doesn't exist, it will be created. `
+}
+
+func (r *EditFile) Parameters() []*Parameter {
+	return []*Parameter{
+		{
+			Name:        "path",
+			Description: "Path of the folder to list files in.  Path will be resolved to a relative path in the current project",
+			Type:        "string",
+		},
+		{
+			Name:        "old_str",
+			Description: "Text to search for - must match exactly and must only have one match exactly",
+			Type:        "string",
+		},
+		{
+			Name:        "new_str",
+			Description: "Text to replace old_str with",
+			Type:        "string",
+		},
+	}
+}
+
+func (r *EditFile) Returns() []*Parameter {
+	return []*Parameter{
+		{
+			Name:        "entries",
+			Description: "List of entries.  Each entry can be a folder or a file.  If the entry is a folder, then it may recursively contain entries - if the recurse parameter was set to true",
+			Type:        "object",
+		},
+	}
+}
+
+func (r *EditFile) Run(args []string) (any, error) {
+	path := args[0]
+	oldStr := args[1]
+	newStr := args[2]
+	fullpath, err := filepath.Abs(filepath.Join(r.ProjectRoot, path))
+	if err != nil {
+		return nil, err
+	}
+
+	content, err := os.ReadFile(fullpath)
+	if err != nil {
+		if os.IsNotExist(err) && oldStr == "" {
+			return createNewFile(fullpath, newStr)
+		}
+		return "", err
+	}
+
+	oldContent := string(content)
+	newContent := strings.Replace(oldContent, oldStr, newStr, -1)
+
+	if oldContent == newContent && oldStr != "" {
+		return "", fmt.Errorf("old_str not found in file")
+	}
+
+	err = os.WriteFile(fullpath, []byte(newContent), 0644)
+	if err != nil {
+		return "", err
+	}
+
+	return "OK", nil
 }
