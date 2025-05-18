@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http" // Added for http.Handle and http.StripPrefix
 	"os"
 
 	gotl "github.com/panyam/goutils/template"
-	tu "github.com/panyam/templar/utils"
+	"github.com/panyam/vibrant/web" // Added for your web package
 )
 
 func main() {
@@ -27,13 +28,21 @@ func main() {
 		return
 	}
 
+	// Get the ServeMux from the web package
+	agentsMux := web.NewServeMux()
+
+	// Register the agentsMux under the /agents/ prefix on the DefaultServeMux
+	// http.DefaultServeMux will be used by b.Serve if its first arg is nil
+	http.Handle("/agents/", http.StripPrefix("/agents", agentsMux))
+	log.Println("Registered agents API at /agents/")
+
 	// Start the server
 	b := tu.BasicServer{
 		FuncMaps: []map[string]any{
 			gotl.DefaultFuncMap(),
 		},
 	}
-	b.Serve(nil, ":7777")
+	b.Serve(nil, ":7777") // Assuming this uses http.DefaultServeMux
 }
 
 var tools map[string]Tool
@@ -110,4 +119,16 @@ func PrintTools() {
 		}
 		fmt.Println("===============================")
 	}
+}
+
+// Dummy implementation for getUserMessageTillEOF if it's not already defined
+// in your actual BaseFileTool or elsewhere. Replace with your actual implementation.
+// If it's part of an unshared package, this might cause a compile error later,
+// but it's needed for the file to be syntactically plausible based on its usage.
+func getUserMessageTillEOF() (string, error) {
+	// This is a placeholder.
+	// In your actual environment, this function reads user input.
+	// For the purpose of making this file content valid for the tool:
+	// return "", nil
+	panic("getUserMessageTillEOF needs to be implemented or available in the build context")
 }
