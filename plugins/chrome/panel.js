@@ -36,10 +36,10 @@ function executeInInspectedPage(commandDetails) {
 
   switch (commandType) {
     case 'SCROLL_TO_TOP':
-      evalString = "window.scrollTo(0, 0); console.log('[AgentAction] Scrolled to top');";
+      evalString = `document.querySelector("ms-autoscroll-container").scrollTo(0, 0); console.log('[AgentAction] Scrolled to top');`;
       break;
     case 'SCROLL_TO_BOTTOM':
-      evalString = "window.scrollTo(0, document.body.scrollHeight); console.log('[AgentAction] Scrolled to bottom');";
+      evalString = `a = document.querySelector("ms-autoscroll-container") ; a.scrollTo(0, a.scrollHeight); console.log('[AgentAction] Scrolled to top');`;
       break;
     case 'SCROLL_DELTA':
       const deltaY = commandDetails.deltaY || 0;
