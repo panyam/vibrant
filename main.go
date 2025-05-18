@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
 	gotl "github.com/panyam/goutils/template"
@@ -39,14 +40,36 @@ var tools map[string]Tool
 
 func init() {
 	tools = map[string]Tool{
-		"read_file":  &ReadFile{ProjectRoot: "./"},
-		"list_files": &ListFiles{ProjectRoot: "./"},
-		"edit_file":  &EditFile{ProjectRoot: "./"},
+		"read_file":       &ReadFile{BaseFileTool{ProjectRoot: "./"}},
+		"list_files":      &ListFiles{BaseFileTool{ProjectRoot: "./"}},
+		"create_file":     &CreateFile{BaseFileTool{ProjectRoot: "./"}},
+		"apply_file_diff": &ApplyFileDiff{BaseFileTool{ProjectRoot: "./"}},
 	}
 }
 
 func RunTool(name string, args []string) {
-	tools[name].Run(args)
+	fmt.Print("\u001b[94mEnter Tool Call Params\u001b[0m: ")
+	input, err := getUserMessageTillEOF()
+	if err != nil {
+		log.Println("Error reading input: ", err)
+		return
+	}
+
+	// log.Println("Got Input: ", input)
+
+	var params map[string]any
+	if err := json.Unmarshal([]byte(input), &params); err != nil {
+		log.Println("Unable to parse tool call json: ", err)
+		return
+	}
+
+	// log.Println("Params: ", params)
+	result, err := tools[name].Run(params)
+	if err != nil {
+		log.Printf("error: %v", err)
+	} else {
+		fmt.Println("\nTOOL CALLED SUCCESSFULLY.  Result: ", result)
+	}
 }
 
 func ToolsJson() {

@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"strings"
 )
 
 type Parameter struct {
@@ -25,11 +26,20 @@ type Tool interface {
 	Description() string
 	Parameters() []*Parameter
 	Returns() []*Parameter
-	Run(args []string) (any, error)
+	Run(args map[string]any) (any, error)
+}
+
+type BaseFileTool struct {
+	ProjectRoot string
+}
+
+func (b *BaseFileTool) ResolvePath(path string) (fullpath string, err error) {
+	fullpath, err = filepath.Abs(filepath.Join(b.ProjectRoot, path))
+	return
 }
 
 type ReadFile struct {
-	ProjectRoot string
+	BaseFileTool
 }
 
 func (r *ReadFile) Name() string {
@@ -72,9 +82,9 @@ func (r *ReadFile) Returns() []*Parameter {
 	}
 }
 
-func (r *ReadFile) Run(args []string) (any, error) {
-	path := args[0]
-	fullpath, err := filepath.Abs(filepath.Join(r.ProjectRoot, path))
+func (r *ReadFile) Run(args map[string]any) (any, error) {
+	path := args["path"].(string)
+	fullpath, err := r.ResolvePath(path)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +97,7 @@ func (r *ReadFile) Run(args []string) (any, error) {
 }
 
 type ListFiles struct {
-	ProjectRoot string
+	BaseFileTool
 }
 
 func (r *ListFiles) Name() string {
@@ -127,8 +137,8 @@ func (r *ListFiles) Returns() []*Parameter {
 	}
 }
 
-func (r *ListFiles) Run(args []string) (any, error) {
-	path := args[0]
+func (r *ListFiles) Run(args map[string]any) (any, error) {
+	path := args["path"].(string)
 	dir, err := filepath.Abs(filepath.Join(r.ProjectRoot, path))
 	if err != nil {
 		return nil, err
@@ -168,80 +178,147 @@ func (r *ListFiles) Run(args []string) (any, error) {
 	return entries, err
 }
 
-type EditFile struct {
-	ProjectRoot string
+type CreateFile struct {
+	BaseFileTool
 }
 
-func (r *EditFile) Name() string {
-	return "edit_file"
+func (r *CreateFile) Name() string {
+	return "create_file"
 }
 
-func (r *EditFile) Description() string {
-	return `Make edits to a text file.
-
-Replaces 'old_str' with 'new_str' in the given file. 'old_str' and 'new_str' MUST be different from each other.
-
-If the file specified with path doesn't exist, it will be created. `
+func (r *CreateFile) Description() string {
+	return `Creates and makes sure a file exists with the given contents.  If a given file already exists, then it is overridden with the new contents.`
 }
 
-func (r *EditFile) Parameters() []*Parameter {
+func (r *CreateFile) Parameters() []*Parameter {
 	return []*Parameter{
 		{
 			Name:        "path",
-			Description: "Path of the folder to list files in.  Path will be resolved to a relative path in the current project",
+			Description: "Path of the file to create or overwrite.",
 			Type:        "string",
 		},
 		{
-			Name:        "old_str",
-			Description: "Text to search for - must match exactly and must only have one match exactly",
-			Type:        "string",
-		},
-		{
-			Name:        "new_str",
-			Description: "Text to replace old_str with",
+			Name:        "contents",
+			Description: "Text contents to set in the file that is created (or overwritten)",
 			Type:        "string",
 		},
 	}
 }
 
-func (r *EditFile) Returns() []*Parameter {
+func (r *CreateFile) Returns() []*Parameter {
 	return []*Parameter{
 		{
-			Name:        "entries",
-			Description: "List of entries.  Each entry can be a folder or a file.  If the entry is a folder, then it may recursively contain entries - if the recurse parameter was set to true",
+			Name:        "result",
+			Description: "Error or Number of bytes written",
 			Type:        "object",
 		},
 	}
 }
 
-func (r *EditFile) Run(args []string) (any, error) {
-	path := args[0]
-	oldStr := args[1]
-	newStr := args[2]
-	fullpath, err := filepath.Abs(filepath.Join(r.ProjectRoot, path))
+func (r *CreateFile) Run(args map[string]any) (any, error) {
+	path := args["path"].(string)
+	fullpath, err := r.ResolvePath(path)
 	if err != nil {
 		return nil, err
 	}
+	contents := args["contents"].(string)
 
-	content, err := os.ReadFile(fullpath)
+	// TODO - replace with stat
+	_, err = os.ReadFile(fullpath)
 	if err != nil {
-		if os.IsNotExist(err) && oldStr == "" {
-			return createNewFile(fullpath, newStr)
+		if os.IsNotExist(err) {
+			return createNewFile(fullpath, contents)
 		}
 		return "", err
 	}
 
-	oldContent := string(content)
-	newContent := strings.Replace(oldContent, oldStr, newStr, -1)
-
-	if oldContent == newContent && oldStr != "" {
-		return "", fmt.Errorf("old_str not found in file")
-	}
-
-	err = os.WriteFile(fullpath, []byte(newContent), 0644)
+	err = os.WriteFile(fullpath, []byte(contents), 0644)
 	if err != nil {
 		return "", err
 	}
 
-	return "OK", nil
+	return fmt.Sprintf("Written %d bytes", len([]byte(contents))), nil
+}
+
+type ApplyFileDiff struct {
+	BaseFileTool
+}
+
+func (r *ApplyFileDiff) Name() string {
+	return "apply_file_diff"
+}
+
+func (r *ApplyFileDiff) Description() string {
+	return `Applies a file diff onto an existing file and returns a success or a failure along with the contents of the file being updated incase the diff being applied is based on an older version of the file`
+}
+
+func (r *ApplyFileDiff) Parameters() []*Parameter {
+	return []*Parameter{
+		{
+			Name:        "path",
+			Description: "Path of the file to create or overwrite.",
+			Type:        "string",
+		},
+		{
+			Name:        "diff",
+			Description: "Unix still diff/patch to apply to a file.  If the diff is invalid (for example it is based on an older version of the file) then an error will be thrown",
+			Type:        "string",
+		},
+	}
+}
+
+func (r *ApplyFileDiff) Returns() []*Parameter {
+	return []*Parameter{
+		{
+			Name:        "result",
+			Description: "Error or Number of bytes written",
+			Type:        "object",
+		},
+	}
+}
+
+func (r *ApplyFileDiff) Run(args map[string]any) (any, error) {
+	path := args["path"].(string)
+	diff := args["diff"].(string)
+	fullpath, err := r.ResolvePath(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO - replace with stat
+	currcontents, err := os.ReadFile(fullpath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, err
+		}
+		return "", err
+	}
+
+	tempinfile, err := os.CreateTemp("", "inputfile")
+	if err != nil {
+		panic(err)
+	}
+	defer os.Remove(tempinfile.Name())
+	temppatchfile, err := os.CreateTemp("", "patchfile")
+	if err != nil {
+		panic(err)
+	}
+	defer os.Remove(temppatchfile.Name())
+
+	if _, err = tempinfile.Write([]byte(currcontents)); err != nil {
+		panic(err)
+	}
+
+	if _, err = temppatchfile.Write([]byte(diff)); err != nil {
+		panic(err)
+	}
+
+	cmd := exec.Command("patch", "-u", tempinfile.Name(), "-i", temppatchfile.Name())
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	log.Println("Patch result: ", output)
+	return "SUCCESS", nil
 }
