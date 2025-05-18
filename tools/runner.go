@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+
+	"golang.design/x/clipboard"
 )
 
 var tools map[string]Tool
@@ -14,6 +16,11 @@ func init() {
 		"list_files":      &ListFiles{BaseFileTool{ProjectRoot: "./"}},
 		"create_file":     &CreateFile{BaseFileTool{ProjectRoot: "./"}},
 		"apply_file_diff": &ApplyFileDiff{BaseFileTool{ProjectRoot: "./"}},
+	}
+
+	err := clipboard.Init()
+	if err != nil {
+		panic(err)
 	}
 }
 
@@ -40,6 +47,9 @@ func RunTool(name string, args []string) {
 	} else {
 		fmt.Println("\nTOOL CALLED SUCCESSFULLY.  Result: ")
 		fmt.Println(result)
+		if val, ok := result.(string); ok {
+			clipboard.Write(clipboard.FmtText, []byte(val))
+		}
 	}
 }
 
