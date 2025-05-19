@@ -38,13 +38,14 @@ This directory contains the main application entry point and command-line interf
     *   **Subcommands**:
         *   `scrolltop`, `scrollbottom`, `scrolldelta [deltaY]`: Send predefined JavaScript snippets for page scrolling actions (fire-and-forget).
         *   `gettitle`: Sends a script to get `document.title` and waits for/prints the result.
-        *   `respond`, `send`: These commands are more application-specific.
-            *   They read input (from stdin or clipboard, using `rootFromClipboard`).
-            *   Use `buildSetInputValueScriptUsingTemplate` to construct a JavaScript string. This script sets the value of a specific textarea (e.g., `ms-function-call-chunk textarea` or `ms-prompt-input-wrapper textarea`) and, if the local `--submit` flag is true (defaults to true), also clicks a corresponding submit button.
-            *   These commands use `sendEvalScript` with `waitForResult = true` to get a report back from the script execution.
-    *   **`buildSetInputValueScriptUsingTemplate`**: Uses Go's `text/template` package to generate the JavaScript for setting input values and optionally clicking submit buttons. It JSON-marshals string inputs (selector, value) before injecting them into the template to ensure they are valid JS string literals.
 
-6.  **`tools.go`**:
+6.  **`calls.go`**:
+    *   `list`, `respond`, `send`: These commands are more tool call specific (ie when LLM page requests a tool call to
+            be satisfied)
+    *   These commands use `sendEvalScript` with `waitForResult = true` to get a report back from the script execution.
+    *   They also have custom templates that are parsed and sent as scripts.
+
+7.  **`tools.go`**:
     *   Defines `vibrant tools` and subcommands (`json`, `run`) for interacting with a system of developer tools defined in the `../tools` package.
 
 ### Workflow Summary
