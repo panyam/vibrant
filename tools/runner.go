@@ -24,23 +24,24 @@ func init() {
 	}
 }
 
-func RunTool(fromClipboard bool, name string, args []string) {
-	input, err := GetInputFromUserOrClipboard(fromClipboard)
-	if err != nil {
-		log.Println("Error reading input: ", err)
-		return
+func RunTool(fromClipboard bool, name string, params map[string]any) (result any, err error) {
+	if params == nil {
+		var input string
+		input, err = GetInputFromUserOrClipboard(fromClipboard, "")
+		if err != nil {
+			log.Println("Error reading input: ", err)
+			return
+		}
+		if err = json.Unmarshal([]byte(input), &params); err != nil {
+			log.Println("Unable to parse tool call json: ", err)
+			return
+		}
 	}
 
 	// log.Println("Got Input: ", input)
 
-	var params map[string]any
-	if err := json.Unmarshal([]byte(input), &params); err != nil {
-		log.Println("Unable to parse tool call json: ", err)
-		return
-	}
-
 	// log.Println("Params: ", params)
-	result, err := tools[name].Run(params)
+	result, err = tools[name].Run(params)
 	if err != nil {
 		log.Printf("error: %v", err)
 	} else {
@@ -50,6 +51,7 @@ func RunTool(fromClipboard bool, name string, args []string) {
 			clipboard.Write(clipboard.FmtText, []byte(val))
 		}
 	}
+	return
 }
 
 func ToolsJson() {

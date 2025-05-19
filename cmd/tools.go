@@ -5,7 +5,6 @@ import (
 	// "gonum.org/v1/plot" // For actual plotting
 	// "gonum.org/v1/plot/plotter"
 	// "gonum.org/v1/plot/vg"
-	"log"
 
 	"github.com/panyam/vibrant/tools"
 	"github.com/spf13/cobra"
@@ -37,9 +36,8 @@ var runToolCmd = &cobra.Command{
 	// Args:  cobra.ExactArgs(3), // metric_type, system_name, analysis_name
 	Args: cobra.MinimumNArgs(1), // metric_type, system_name, analysis_name
 	Run: func(cmd *cobra.Command, args []string) {
-		log.Println("Args: ", args)
 		fromClipboard, _ := cmd.Flags().GetBool("from-clipboard")
-		tools.RunTool(fromClipboard, args[0], args[1:])
+		tools.RunTool(fromClipboard, args[0], nil)
 	},
 }
 

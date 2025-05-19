@@ -50,11 +50,14 @@ func getUserMessageTillEOF() (string, error) {
 	}
 }
 
-func GetInputFromUserOrClipboard(fromClipboard bool) (input string, err error) {
+func GetInputFromUserOrClipboard(fromClipboard bool, prompt string) (input string, err error) {
 	if fromClipboard {
 		input = string(clipboard.Read(clipboard.FmtText))
 	} else {
-		fmt.Print("\u001b[94mEnter Tool Call Params\u001b[0m: ")
+		if prompt == "" {
+			prompt = "Enter Prompt"
+		}
+		fmt.Printf("\u001b[94m%s\u001b[0m: ", prompt)
 		input, err = getUserMessageTillEOF()
 	}
 	return

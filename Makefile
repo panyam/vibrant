@@ -1,4 +1,5 @@
 
+vib := go run cmd/*.go
 NUM_LINKED_GOMODS=`cat go.mod | grep -v "^\/\/" | grep replace | wc -l | sed -e "s/ *//g"`
 
 all: build run
@@ -29,17 +30,17 @@ resymlink:
 prompt:
 	source ~/personal/.shhelpers && files_for_llm `find . | grep -v apiclient | grep -v pnpm | grep -v llmprompts | grep -v node.mod | grep -v .git | grep -v gen | grep -v web.static | grep -v output | grep -v content | grep -v dist | grep -v ./static/css/tailwind.css | grep -v go.sum`
 
-cliptool_createfile:
-	go run cmd/*.go tools run -c create_file
+respond_to_createfile:
+	$(vib) tools run -c create_file
 
-cliptool_readfile:
-	go run cmd/*.go tools run -c read_file
+respond_to_readfile:
+	vib tools run -c read_file
 
 tool_createfile:
-	go run cmd/*.go tools run create_file
+	vib tools run create_file
 
 tool_readfile:
-	go run cmd/*.go tools run read_file
+	vib tools run read_file
 
 respond_to_tool:
-	go run cmd/*.go tools respond
+	vib tools respond
