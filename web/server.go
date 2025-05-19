@@ -20,16 +20,21 @@ type Request struct {
 	ClientId   string
 	Payload    any // Could store the original script or params for context
 	SentAt     time.Time
-	Response   any // Stores the 'result' field from EVALUATION_RESULT
+	Response   any // Stores the 'result' field from EVALUATION_RESULT or imageData for screenshots
 	ResponseAt time.Time
 	err        error       // Stores error if evaluation resulted in an exception
 	finished   bool        // To prevent processing a response multiple times
-	recvChan   chan string // For the /eval?wait=true handler, made buffered
+	recvChan   chan string // For the /eval?wait=true or /screenshot_elements?wait=true handler, made buffered
 }
 
 func NewRequest(clientId string, payload any) *Request {
+	// Using a more specific prefix for screenshot requests for clarity in logs if needed
+	prefix := "eval"
+	if _, ok := payload.([]string); ok { // Check if payload is a slice of strings (selectors for screenshot)
+		prefix = "screenshot"
+	}
 	return &Request{
-		Id:       fmt.Sprintf("eval-%d-%s", time.Now().UnixNano(), clientId),
+		Id:       fmt.Sprintf("%s-%d-%s", prefix, time.Now().UnixNano(), clientId),
 		SentAt:   time.Now(),
 		ClientId: clientId,
 		Payload:  payload,
@@ -40,7 +45,7 @@ func NewRequest(clientId string, payload any) *Request {
 // Json method of Request is not directly used for WebSocket message, but good for logging/internal state
 func (r *Request) Json() any {
 	return map[string]any{
-		"Payload":   r.Payload, // This is the script for eval requests
+		"Payload":   r.Payload,
 		"RequestId": r.Id,
 	}
 }
@@ -49,7 +54,7 @@ type Handler struct {
 	fanoutMutex     sync.RWMutex
 	Fanouts         map[string]*conc.FanOut[conc.Message[any]]
 	reqMutex        sync.RWMutex
-	pendingRequests map[string]*Request // Stores requests waiting for EVALUATION_RESULT
+	pendingRequests map[string]*Request
 }
 
 func NewHandler() *Handler {
@@ -60,12 +65,11 @@ func NewHandler() *Handler {
 }
 
 type Conn struct {
-	gohttp.JSONConn // Embeds the connection helper from goutils
-	handler         *Handler
-	ClientId        string
+	gohttp.JSONConn
+	handler  *Handler
+	ClientId string
 }
 
-// Validate is called by gohttp.WSServe to validate the connection request
 func (h *Handler) Validate(w http.ResponseWriter, r *http.Request) (out *Conn, isValid bool) {
 	out = &Conn{handler: h}
 	out.ClientId = r.PathValue("clientId")
@@ -79,9 +83,8 @@ func (h *Handler) Validate(w http.ResponseWriter, r *http.Request) (out *Conn, i
 	return
 }
 
-// HandleMessage is called by gohttp.JSONConn when a message is received from the WebSocket client
 func (t *Conn) HandleMessage(msgData any) error {
-	msgMap, ok := msgData.(map[string]interface{})
+	msgMap, ok := msgData.(map[string]any)
 	if !ok {
 		log.Printf("Client %s: Received message in unexpected format: %T. Data: %v", t.ClientId, msgData, msgData)
 		return fmt.Errorf("unexpected message format: %T", msgData)
@@ -97,55 +100,102 @@ func (t *Conn) HandleMessage(msgData any) error {
 		return fmt.Errorf("message from client missing 'type' or 'requestId'")
 	}
 
-	if msgType == "EVALUATION_RESULT" {
-		t.handler.reqMutex.Lock()
-		req, exists := t.handler.pendingRequests[requestId]
-		if exists {
-			if !req.finished { // Process only if not already finished
-				req.Response = msgMap["result"]
-				req.ResponseAt = time.Now()
-				if isException, excOK := msgMap["isException"].(bool); excOK && isException {
-					req.err = fmt.Errorf("script evaluation exception: %v", msgMap["exceptionInfo"])
-					req.Response = msgMap["exceptionInfo"] // Overwrite Response with exceptionInfo
-				}
-				req.finished = true // Mark finished before sending to channel
+	t.handler.reqMutex.Lock()
+	defer t.handler.reqMutex.Unlock()
 
-				var responseString string
-				if req.err != nil {
-					responseString = fmt.Sprintf("Error: %v", req.err)
-				} else {
-					responseBytes, err := json.Marshal(req.Response)
-					if err != nil {
-						responseString = fmt.Sprintf("Error marshalling response result: %v", err)
-						req.err = fmt.Errorf("error marshalling response: %w", err)
-					} else {
-						responseString = string(responseBytes)
-					}
-				}
+	req, exists := t.handler.pendingRequests[requestId]
+	if !exists {
+		log.Printf("Client %s: Received %s for unknown or already processed requestId %s.", t.ClientId, msgType, requestId)
+		return nil // Don't return error, just log and ignore if request is not found
+	}
 
-				// recvChan is now buffered, direct send is fine.
-				req.recvChan <- responseString
-				log.Printf("Client %s: Sent response for requestId %s to buffered recvChan.", t.ClientId, requestId)
-				close(req.recvChan)
+	if req.finished {
+		log.Printf("Client %s: Received duplicate/late %s for already finished requestId %s.", t.ClientId, msgType, requestId)
+		return nil
+	}
 
-				delete(t.handler.pendingRequests, requestId)
+	var responseToSend string
+	var marshalingError error
 
+	switch msgType {
+	case "EVALUATION_RESULT":
+		req.Response = msgMap["result"]
+		if isException, excOK := msgMap["isException"].(bool); excOK && isException {
+			req.err = fmt.Errorf("script evaluation exception: %v", msgMap["exceptionInfo"])
+			req.Response = msgMap["exceptionInfo"] // Overwrite Response with exceptionInfo
+		}
+		if req.err != nil {
+			responseToSend = fmt.Sprintf("Error: %v", req.err)
+		} else {
+			responseBytes, err := json.Marshal(req.Response)
+			if err != nil {
+				responseToSend = fmt.Sprintf("Error marshalling eval response result: %v", err)
+				marshalingError = fmt.Errorf("error marshalling eval response: %w", err)
 			} else {
-				log.Printf("Client %s: Received duplicate/late EVALUATION_RESULT for already finished requestId %s.", t.ClientId, requestId)
+				responseToSend = string(responseBytes)
+			}
+		}
+		log.Printf("Client %s: Processed EVALUATION_RESULT for %s.", t.ClientId, requestId)
+
+	case "ELEMENTS_SCREENSHOT_RESULT":
+		req.Response = msgMap["imageData"] // This should be a map or the error string
+		if errMsg, errOK := msgMap["error"].(string); errOK && errMsg != "" {
+			req.err = fmt.Errorf("screenshot error from client: %s", errMsg)
+			// If there's a top-level error, Response might just be that error string
+			errorResponsePayload := map[string]string{"error": errMsg}
+			responseBytes, err := json.Marshal(errorResponsePayload)
+			if err != nil {
+				responseToSend = fmt.Sprintf(`{"error": "Error marshalling screenshot error: %v"}`, err)
+				marshalingError = fmt.Errorf("error marshalling screenshot error response: %w", err)
+			} else {
+				responseToSend = string(responseBytes)
 			}
 		} else {
-			log.Printf("Client %s: Received EVALUATION_RESULT for unknown or already processed/deleted requestId %s.", t.ClientId, requestId)
+			// If no top-level error, marshal the imageData map
+			responseBytes, err := json.Marshal(req.Response)
+			if err != nil {
+				responseToSend = fmt.Sprintf(`{"error": "Error marshalling screenshot imageData: %v"}`, err)
+				marshalingError = fmt.Errorf("error marshalling screenshot imageData: %w", err)
+			} else {
+				responseToSend = string(responseBytes)
+			}
 		}
-		t.handler.reqMutex.Unlock()
-	} else {
-		log.Printf("Client %s: Received unhandled message type '%s' from client.", t.ClientId, msgType)
+		log.Printf("Client %s: Processed ELEMENTS_SCREENSHOT_RESULT for %s.", t.ClientId, requestId)
+
+	default:
+		log.Printf("Client %s: Received unhandled message type '%s' from client for requestId %s.", t.ClientId, msgType, requestId)
+		return nil // Don't mark as finished or send to channel if unhandled
 	}
+
+	req.ResponseAt = time.Now()
+	if marshalingError != nil && req.err == nil { // If marshaling failed, set it as the primary error
+		req.err = marshalingError
+		if responseToSend == "" { // Ensure responseToSend has error info
+			responseToSend = fmt.Sprintf("Error: %v", req.err)
+		}
+	}
+	req.finished = true
+
+	// Send to channel if it's still open (it should be for a waiting request)
+	// A select with a default might be safer if the channel could somehow be closed by a timeout race,
+	// but `close(req.recvChan)` happens after this send or on timeout.
+	select {
+	case req.recvChan <- responseToSend:
+		log.Printf("Client %s: Sent response for requestId %s to recvChan.", t.ClientId, requestId)
+	default:
+		// This case might occur if the channel was closed due to a timeout just before this send attempt.
+		log.Printf("Client %s: recvChan for requestId %s was already closed. Response not sent.", t.ClientId, requestId)
+	}
+
+	close(req.recvChan) // Close channel after sending or if it was already closed
+	delete(t.handler.pendingRequests, requestId)
+
 	return nil
 }
 
 func (t *Conn) OnTimeout() bool {
 	log.Printf("Client %s: WebSocket connection timeout.", t.ClientId)
-	return true // Returning true usually means close the connection
+	return true
 }
 
 func (c *Conn) OnClose() {
@@ -186,8 +236,7 @@ func (c *Conn) OnStart(conn *websocket.Conn) error {
 	go func() {
 		time.Sleep(1 * time.Second)
 		welcomeScript := "console.log('[AgentWelcome] Go backend says hello! Location: ' + window.location.href + '. Title: ' + document.title + '. Timestamp: ' + new Date().toLocaleTimeString()); ({ pageTitle: document.title, userAgent: navigator.userAgent, connectionTime: new Date().toISOString() });"
-
-		_ = c.handler.SubmitEvalRequest(c.ClientId, welcomeScript)
+		_ = c.handler.SubmitEvalRequest(c.ClientId, welcomeScript) // This will create a new request, okay for welcome.
 		log.Printf("Client %s: Sent welcome EVALUATE_SCRIPT.", c.ClientId)
 	}()
 	return nil
@@ -195,16 +244,31 @@ func (c *Conn) OnStart(conn *websocket.Conn) error {
 
 func (h *Handler) SubmitEvalRequest(clientId string, script string) *Request {
 	req := NewRequest(clientId, script)
-
 	h.reqMutex.Lock()
 	h.pendingRequests[req.Id] = req
 	h.reqMutex.Unlock()
-	log.Printf("Stored pending request %s for client %s. Total pending: %d", req.Id, clientId, len(h.pendingRequests))
+	log.Printf("Stored pending eval request %s for client %s. Total pending: %d", req.Id, clientId, len(h.pendingRequests))
 
 	messagePayload := map[string]any{
 		"type":             "EVALUATE_SCRIPT",
 		"requestId":        req.Id,
 		"scriptToEvaluate": script,
+	}
+	h.BroadcastToAgent(clientId, messagePayload)
+	return req
+}
+
+func (h *Handler) SubmitScreenshotElementsRequest(clientId string, selectors []string) *Request {
+	req := NewRequest(clientId, selectors) // Payload is the list of selectors
+	h.reqMutex.Lock()
+	h.pendingRequests[req.Id] = req
+	h.reqMutex.Unlock()
+	log.Printf("Stored pending screenshot request %s for client %s. Selectors: %v. Total pending: %d", req.Id, clientId, selectors, len(h.pendingRequests))
+
+	messagePayload := map[string]any{
+		"type":      "CAPTURE_ELEMENTS_SCREENSHOT",
+		"requestId": req.Id,
+		"selectors": selectors,
 	}
 	h.BroadcastToAgent(clientId, messagePayload)
 	return req
@@ -274,20 +338,30 @@ func NewServeMux() *http.ServeMux {
 				if ok {
 					log.Printf("Client %s /eval: Received response for ReqID %s: %s", clientId, req.Id, responseMsg)
 					w.Header().Set("Content-Type", "application/json")
-					// Ensure responseMsg is valid for direct inclusion or re-marshal if it's complex object string
-					// For simplicity, assuming responseMsg is either simple string, number, or already a JSON string of an object/array.
-					fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, responseMsg)
+					// responseMsg is expected to be a JSON string of the result or an error string
+					// If it's an error string from our side, it might not be valid JSON, so wrap it.
+					// If it's from the client, it should be marshal-able JSON or a simple string.
+					// For simplicity, we assume if it starts with "Error:", it's not JSON from client.
+					if !json.Valid([]byte(responseMsg)) {
+						// Attempt to re-marshal if it's likely an error string we created
+						// This part could be more robust based on how errors are formatted
+						errorPayload := map[string]any{"error": responseMsg}
+						jsonError, _ := json.Marshal(errorPayload)
+						fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, string(jsonError))
+					} else {
+						fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, responseMsg)
+					}
 				} else {
 					log.Printf("Client %s /eval: recvChan closed without a message for ReqID %s.", clientId, req.Id)
 					http.Error(w, "Response channel closed or request processed/timed out.", http.StatusInternalServerError)
 				}
-			case <-time.After(30 * time.Second):
+			case <-time.After(30 * time.Second): // Standard timeout for eval
 				log.Printf("Client %s /eval: Timed out waiting for response for ReqID %s", clientId, req.Id)
 				http.Error(w, "Timeout waiting for script evaluation response", http.StatusGatewayTimeout)
 				handler.reqMutex.Lock()
 				if pendingReq, exists := handler.pendingRequests[req.Id]; exists && !pendingReq.finished {
-					pendingReq.finished = true
-					close(pendingReq.recvChan)
+					pendingReq.finished = true // Mark as finished to prevent further processing
+					close(pendingReq.recvChan) // Close chan to unblock any potential race
 					delete(handler.pendingRequests, req.Id)
 					log.Printf("Client %s /eval: Cleaned up timed-out pending request %s", clientId, req.Id)
 				}
@@ -299,6 +373,61 @@ func NewServeMux() *http.ServeMux {
 				"status":    "EVALUATE_SCRIPT command sent",
 				"requestId": req.Id,
 			})
+		}
+	})
+
+	mux.HandleFunc("POST /agents/{clientId}/screenshot_elements", func(w http.ResponseWriter, r *http.Request) {
+		clientId := r.PathValue("clientId")
+		if clientId == "" {
+			http.Error(w, "Client ID is missing in path", http.StatusBadRequest)
+			return
+		}
+		wait := r.URL.Query().Get("wait") == "true"
+
+		var requestBody struct {
+			Selectors []string `json:"selectors"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			http.Error(w, "Invalid JSON body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
+
+		if len(requestBody.Selectors) == 0 {
+			http.Error(w, "Selectors array cannot be empty", http.StatusBadRequest)
+			return
+		}
+
+		req := handler.SubmitScreenshotElementsRequest(clientId, requestBody.Selectors)
+
+		if wait {
+			log.Printf("Client %s /screenshot_elements: Waiting for response for ReqID: %s", clientId, req.Id)
+			select {
+			case responseMsg, ok := <-req.recvChan:
+				if ok {
+					log.Printf("Client %s /screenshot_elements: Received response for ReqID %s: %s", clientId, req.Id, responseMsg)
+					w.Header().Set("Content-Type", "application/json")
+					// responseMsg is expected to be a JSON string of the imageData map or an error structure
+					fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, responseMsg)
+				} else {
+					log.Printf("Client %s /screenshot_elements: recvChan closed without a message for ReqID %s.", clientId, req.Id)
+					http.Error(w, "Response channel closed or request processed/timed out.", http.StatusInternalServerError)
+				}
+			case <-time.After(60 * time.Second): // Longer timeout for screenshots
+				log.Printf("Client %s /screenshot_elements: Timed out waiting for response for ReqID %s", clientId, req.Id)
+				http.Error(w, "Timeout waiting for screenshot response", http.StatusGatewayTimeout)
+				handler.reqMutex.Lock()
+				if pendingReq, exists := handler.pendingRequests[req.Id]; exists && !pendingReq.finished {
+					pendingReq.finished = true
+					close(pendingReq.recvChan)
+					delete(handler.pendingRequests, req.Id)
+					log.Printf("Client %s /screenshot_elements: Cleaned up timed-out pending request %s", clientId, req.Id)
+				}
+				handler.reqMutex.Unlock()
+			}
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "CAPTURE_ELEMENTS_SCREENSHOT command sent", "requestId": req.Id})
 		}
 	})
 
@@ -317,6 +446,7 @@ func NewServeMux() *http.ServeMux {
 	log.Println("WebSocket ServeMux configured.")
 	log.Println("GET  /agents/{clientId}/subscribe - WebSocket connections")
 	log.Println("POST /agents/{clientId}/eval        - Evaluate script (add ?wait=true to wait for response)")
+	log.Println("POST /agents/{clientId}/screenshot_elements - Capture screenshots of elements (add ?wait=true to wait for response)")
 	log.Println("GET  /test_eval?agent=<name>&script=<javascript> - Test script evaluation")
 	return mux
 }

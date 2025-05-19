@@ -29,6 +29,11 @@ func listCalls() []map[string]any {
 					const nameNode = node.querySelector("mat-panel-title span[class='name']")
 					const contentNode = node.querySelector("ms-code-block pre code")
 					const submitButton = node.querySelector("footer button[aria-label='Submit']")
+					const textarea = node.querySelector("textarea")
+					console.log("Found Text Area: ", textarea)
+					if (contentNode) {
+						contentNode.style.maxHeight = "50px";
+					}
 					if (nameNode && contentNode && submitButton) {
 							retval.push({
 									"name": nameNode.innerText,

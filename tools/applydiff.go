@@ -105,6 +105,9 @@ func (r *ApplyFileDiff) Run(args map[string]any) (any, error) {
 		log.Println("Error Output: ", string(errout))
 		log.Println("Std Output: ", string(output))
 		log.Println("Could not wait: ", err)
+		if string(errout) != "" {
+			return string(errout), nil
+		}
 		return string(output), nil
 	}
 
