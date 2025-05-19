@@ -58,7 +58,7 @@ This directory contains a Chrome DevTools extension designed to facilitate commu
     *   **Connection Multiplexing**: Maintains a map of active WebSocket connections, keyed by `tabId`, allowing multiple DevTools panels (for different tabs) to have independent agent connections.
     *   **WebSocket Handling**:
         *   Receives "CONNECT_WEBSOCKET" messages from `panel.js`.
-        *   Establishes WebSocket connection to `ws://localhost:9999/agent/<connectionName>/subscribe`.
+        *   Establishes WebSocket connection to `ws://localhost:9999/agents/<connectionName>/subscribe`.
         *   Relays messages received from the WebSocket server to the appropriate `panel.js` instance (for the correct tab).
         *   Sends status updates (`WEBSOCKET_STATUS`) back to `panel.js` (e.g., "Connected", "Disconnected", "Error").
     *   **Lifecycle Management**:
@@ -71,7 +71,7 @@ This directory contains a Chrome DevTools extension designed to facilitate commu
 2.  The "Agent Logger" panel is available.
 3.  User enters a "Connection Name" and clicks "Connect".
 4.  `panel.js` tells `background.js` to establish a WebSocket connection for that tab and name.
-5.  `background.js` connects to `ws://localhost:9999/agent/<name>/subscribe`.
+5.  `background.js` connects to `ws://localhost:9999/agents/<name>/subscribe`.
 6.  Status is relayed back to `panel.js`.
 7.  When the Go agent server sends a JSON message over WebSocket, `background.js` forwards it to the relevant `panel.js`.
 8.  `panel.js`'s `executeInInspectedPage` function interprets the command in the message and uses `chrome.devtools.inspectedWindow.eval()` to run JavaScript code on the inspected page, performing the requested action (scroll, query, set value, click).

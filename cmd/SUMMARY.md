@@ -30,7 +30,7 @@ This directory contains the main application entry point and command-line interf
     *   **`vibrant agents serve` Purpose**: Starts a dedicated HTTP server for handling WebSocket connections and commands for the Chrome DevTools agent extension.
     *   Uses the `ServeMux` returned by `web.NewServeMux()` (from the `../web` package).
     *   This server runs on port `9999` by default, configurable via the `-p` or `--port` flag.
-    *   The `web.NewServeMux()` handles its own routing for paths like `/agent/{connectionName}/subscribe` (WebSocket) and `/agents/{connectionName}/{COMMAND_TYPE}` (HTTP POST commands).
+    *   The `web.NewServeMux()` handles its own routing for paths like `/agents/{connectionName}/subscribe` (WebSocket) and `/agents/{connectionName}/{COMMAND_TYPE}` (HTTP POST commands).
 
 5.  **`tools.go`**:
     *   Defines the `vibrant tools` command group and its subcommands `json` and `run`.

@@ -11,8 +11,8 @@
 *   **CLI (`./cmd`)**: A command-line interface built with Cobra provides several top-level commands:
     *   `vibrant canvas`: Starts a web server (default port `7777`) using `panyam/templar` to serve a frontend application (likely for UI, testing, and dynamic templates).
     *   `vibrant agents serve`: Starts a dedicated HTTP/WebSocket server (default port `9999`) to handle communication with the Chrome DevTools extension. This server exposes:
-        *   WebSocket endpoint: `ws://localhost:9999/agent/<connectionName>/subscribe` for the extension to connect.
-        *   HTTP POST endpoints: `http://localhost:9999/agents/<connectionName>/<COMMAND_TYPE>` for external triggers to send commands to connected extension instances.
+        *   WebSocket endpoint: `ws://localhost:9999/agents/<connectionName>/subscribe` for the extension to connect.
+        *   HTTP POST endpoints: `http://localhost:9999/agents/<connectionName>/commands/<COMMAND_TYPE>` for external triggers to send commands to connected extension instances.
     *   `vibrant tools`: A group of commands to list, describe in JSON, and run predefined developer tools.
 *   **Agent Web Service (`./web`)**: Implements the backend logic for the `vibrant agents serve` command.
     *   Manages WebSocket connections from multiple Chrome DevTools extension instances.
@@ -25,7 +25,7 @@
 ### 2. Chrome DevTools Extension (`./plugins/chrome`)
 
 *   **DevTools Panel**: Adds a custom panel ("Agent Logger") to Chrome DevTools.
-*   **WebSocket Client**: Connects to the Go agent server (`ws://localhost:9999/agent/<connectionName>/subscribe`) via the panel UI.
+*   **WebSocket Client**: Connects to the Go agent server (`ws://localhost:9999/agents/<connectionName>/subscribe`) via the panel UI.
     *   Includes auto-reconnection logic with exponential backoff if the connection drops (unless explicitly disconnected by the user).
 *   **Page Interaction**: Receives commands (as JSON messages) from the Go agent server and executes corresponding actions on the inspected web page. This is achieved by dynamically generating and evaluating JavaScript code in the page's context using `chrome.devtools.inspectedWindow.eval()`.
 *   **Supported Page Actions**:

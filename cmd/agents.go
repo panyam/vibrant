@@ -25,13 +25,13 @@ var agentsServeCmd = &cobra.Command{
 		log.Printf("Starting Agent WebSocket server on %s", addr)
 
 		// Get the ServeMux from the web package.
-		// This ServeMux is configured to handle paths like /agent/{connectionName}/subscribe
+		// This ServeMux is configured to handle paths like /agents/{connectionName}/subscribe
 		agentApiMux := web.NewServeMux()
 		http.Handle("/agents/", http.StripPrefix("/agents", agentApiMux))
 
 		// Start the HTTP server with this specific mux.
 		// No StripPrefix is needed here because agentApiMux handles the root path
-		// from its perspective (e.g., /agent/..., /test_broadcast)
+		// from its perspective (e.g., /agents/..., /test_broadcast)
 		err := http.ListenAndServe(addr, agentApiMux)
 		if err != nil {
 			log.Fatalf("Failed to start agent server on %s: %v", addr, err)

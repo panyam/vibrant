@@ -28,11 +28,11 @@ This directory contains the Go package responsible for handling backend HTTP and
     *   `GetConnectionManager()`: An exported function to allow other Go packages to access the global `manager` if direct broadcasting is needed (though using dedicated API endpoints is generally preferred).
 
 4.  **WebSocket Handler (`serveWs`)**:
-    *   Path: Expected to handle requests like `/agent/{connectionName}/subscribe` (relative to the mount point of the `ServeMux` returned by `NewServeMux`).
-    *   Upgrades HTTP GET requests to WebSocket connections.
-    *   Registers the connection with the `manager`.
+    *   Uses the websocket (ws) module in github.com/panyam/goutils/http package.
+    *   Takes care of upgrades etc and provides easy abstractions to deal with Websocket messages and broadcasts.
+    *   Once a connection is created it is added to the list of Fanout objects (responsible for fanning out messages to
+        all listeners).
     *   Sends a welcome message to the newly connected client.
-    *   Enters a read loop (`conn.ReadMessage()`) primarily to detect client disconnections (graceful or erroneous) and logs these events. It does not currently process messages received *from* the client.
 
 5.  **HTTP Command Handler (`handleAgentCommandPost`)**:
     *   Path: Expected to handle POST requests like `/agents/{connectionName}/{COMMAND_TYPE}` (relative to the mount point).
@@ -50,7 +50,7 @@ This directory contains the Go package responsible for handling backend HTTP and
     *   This is the primary exported function to set up the routing for this package.
     *   Creates an `http.ServeMux`.
     *   Registers handlers:
-        *   `/agent/`: Routes to `serveWs` for WebSocket connections.
+        *   `/agents/`: Routes to `serveWs` for WebSocket connections.
         *   `/agents/`: Routes to `handleAgentCommandPost` for incoming HTTP POST commands.
         *   `/test_broadcast`: A GET endpoint for simple testing of broadcasting messages. It accepts `agent`, `msg`, and `type` query parameters.
     *   This `ServeMux` is intended to be used by a higher-level command (e.g., `vibrant agents serve`) to start an HTTP server.
@@ -58,7 +58,7 @@ This directory contains the Go package responsible for handling backend HTTP and
 ### Workflow Summary
 
 1.  An HTTP server (started by `vibrant agents serve` using `web.NewServeMux()`) listens, typically on `localhost:9999`.
-2.  The Chrome DevTools extension initiates a WebSocket connection to `ws://localhost:9999/agent/<connectionName>/subscribe`.
+2.  The Chrome DevTools extension initiates a WebSocket connection to `ws://localhost:9999/agents/<connectionName>/subscribe`.
 3.  `serveWs` handles this, upgrades the connection, and registers it with the `manager`.
 4.  External processes (or the test endpoint) can make HTTP POST requests to `http://localhost:9999/agents/<connectionName>/<COMMAND_TYPE>` with a JSON body.
 5.  `handleAgentCommandPost` receives this, forms a complete WebSocket message (ensuring `type` matches `COMMAND_TYPE`), and uses `manager.BroadcastToAgent`.
