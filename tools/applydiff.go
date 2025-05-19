@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -81,9 +82,30 @@ func (r *ApplyFileDiff) Run(args map[string]any) (any, error) {
 
 	log.Printf("Running patch -u %s -i %s", tempinfile.Name(), temppatchfile.Name())
 	cmd := exec.Command("patch", "-u", tempinfile.Name(), "-i", temppatchfile.Name())
-	output, err := cmd.Output()
+	stderr, err := cmd.StderrPipe()
 	if err != nil {
+		log.Println("Cannot get stderr: ", err)
 		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		log.Println("Cannot get stdout: ", err)
+		return nil, err
+	}
+
+	if err = cmd.Start(); err != nil {
+		log.Fatal("Could not sart command: ", err)
+	}
+
+	output, err := io.ReadAll(stdout)
+	errout, err := io.ReadAll(stderr)
+
+	if err := cmd.Wait(); err != nil {
+		log.Println("Error patching: ", err.Error(), errout)
+		log.Println("Error Output: ", string(errout))
+		log.Println("Std Output: ", string(output))
+		log.Println("Could not wait: ", err)
+		return string(output), nil
 	}
 
 	log.Println("Patch result: ", output)

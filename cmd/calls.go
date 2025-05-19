@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log" // Keep for os.Getenv as a fallback if rootCurrentClientId isn't populated by PersistentPreRun
 	"strconv"
+	"text/template"
 
 	"github.com/panyam/vibrant/tools"
 	"github.com/spf13/cobra"
@@ -26,7 +28,8 @@ func listCalls() []map[string]any {
 			el.forEach((node, index) => {
 					const nameNode = node.querySelector("mat-panel-title span[class='name']")
 					const contentNode = node.querySelector("ms-code-block pre code")
-					if (nameNode && contentNode) {
+					const submitButton = node.querySelector("footer button[aria-label='Submit']")
+					if (nameNode && contentNode && submitButton) {
 							retval.push({
 									"name": nameNode.innerText,
 									"payload": contentNode.innerText,
@@ -124,22 +127,69 @@ func callsCmdToolCallRespond() *cobra.Command {
 
 			// We have the result so now send it back!
 
-			// fromClipboard is now rootFromClipboard from cmd/root.go
 			submitFlag, _ := cmd.Flags().GetBool("submit")
-			/*
-				value, err := tools.GetInputFromUserOrClipboard(rootFromClipboard, "Enter Tool Call Response") // Use global rootFromClipboard
-				if err != nil {
-					log.Fatalf("Error getting input: %v", err)
-				}
-			*/
 			value := result.(string)
-
-			targetSelector := "ms-function-call-chunk textarea"
-			targetSubmitSelector := `ms-function-call-chunk footer button[aria-label='Submit']`
-			script, err := buildSetInputValueScriptUsingTemplate(targetSelector, value, submitFlag, targetSubmitSelector)
+			valueEscaped, err := json.Marshal(value)
 			if err != nil {
-				log.Fatalf("Error building script: %v", err)
+				panic(err)
 			}
+
+			const scriptTemplate = `
+        (() => {
+          const retval = [];
+          const el = document.querySelectorAll("ms-function-call-chunk");
+          let index = 0;
+          el.forEach((node) => {
+              const nameNode = node.querySelector("mat-panel-title span[class='name']")
+              const contentNode = node.querySelector("ms-code-block pre code")
+              const submitButton = node.querySelector("footer button[aria-label='Submit']")
+							console.log("Node: ", node)
+              if (nameNode && contentNode && submitButton) {
+                  if (index == {{.callIndex}}) {
+                      const textarea = node.querySelector("textarea")
+                      if (textarea) {
+                          // set it
+													// textarea.classList.remove("ng-untouched")
+													// textarea.classList.remove("ng-pristine")
+													// textarea.classList.add("ng-dirty")
+													textarea.focus();
+													textarea.value = {{.value}};
+													textarea.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+													textarea.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+
+													submitButton.removeAttribute("disabled");
+													// submitButton.classList.remove("invalid");
+													// submitButton.classList.remove("mat-mdc-button-disabled");
+
+                          console.log("Submit Flag: ", {{.submit}})
+                          {{ if .submit }}
+                          setTimeout(() => {
+															const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+                              submitButton.dispatchEvent(clickEvent);
+                          }, 500)
+                          {{ end }}
+                      }
+                  }
+                  index += 1;
+              }
+          })
+          console.log("Found Tool Calls: ", retval)
+          return retval;
+        })();
+    `
+			tpl, err := template.New("setCallResult").Parse(scriptTemplate)
+			if err != nil {
+				panic(fmt.Sprintf("Failed to parse internal setCallResult: %v", err))
+			}
+			var scriptBuf bytes.Buffer
+			if err := tpl.Execute(&scriptBuf, map[string]any{
+				"callIndex": callIndex,
+				"value":     string(valueEscaped),
+				"submit":    submitFlag,
+			}); err != nil {
+				log.Fatalf("failed to execute setInputValue template: %v", err)
+			}
+			script := scriptBuf.String()
 
 			response, err := sendEvalScript(script, false)
 			if err != nil {
@@ -148,7 +198,7 @@ func callsCmdToolCallRespond() *cobra.Command {
 			log.Printf("Respond command sent. Result: %v", response)
 		},
 	}
-	out.Flags().BoolP("submit", "s", true, "Induce a 'submit' after the value is set (default true)")
+	out.Flags().BoolP("submit", "s", false, "Induce a 'submit' after the value is set (default true)")
 	return out
 }
 
