@@ -14,36 +14,36 @@ const INITIAL_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_DELAY = 10000;    
 
 // Minimal logging to panel's own console for critical errors or status.
-// Page interactions are now fully driven by scripts from the backend.
+
+function sendResponseToBackend(payload) {
+    if (panelPort) {
+        panelPort.postMessage({
+            type: "FORWARD_TO_WEBSOCKET_SERVER",
+            payload: payload
+        });
+    } else {
+        console.error("Panel: panelPort is null, cannot send response to backend.", payload);
+    }
+}
 
 function handleEvaluateScriptRequest(requestDetails) {
     if (!requestDetails || !requestDetails.requestId || typeof requestDetails.scriptToEvaluate !== 'string') {
         console.error("Panel: Invalid EVALUATE_SCRIPT request", requestDetails);
-        // Optionally, send an error back to the server if panelPort exists
-        if (panelPort) {
-            panelPort.postMessage({
-                type: "FORWARD_TO_WEBSOCKET_SERVER",
-                payload: {
-                    type: "EVALUATION_RESULT",
-                    requestId: requestDetails.requestId || "unknown",
-                    error: "Invalid EVALUATE_SCRIPT request structure from backend",
-                    isException: true,
-                    exceptionInfo: "Invalid request structure."
-                }
-            });
-        }
+        sendResponseToBackend({
+            type: "EVALUATION_RESULT",
+            requestId: requestDetails.requestId || "unknown",
+            error: "Invalid EVALUATE_SCRIPT request structure from backend",
+            isException: true,
+            exceptionInfo: "Invalid request structure."
+        });
         return;
     }
-    // console.log("Panel: Received EVALUATE_SCRIPT request", requestDetails.requestId, "Script:", requestDetails.scriptToEvaluate); // Can be very verbose
 
     chrome.devtools.inspectedWindow.eval(
         requestDetails.scriptToEvaluate,
-        function(result, isExceptionInfo) { // Note: isExceptionInfo is an object if an error occurred
-            // console.log(`Panel: Evaluation complete for requestId: ${requestDetails.requestId}. Exception:`, isExceptionInfo, "Result:", result); // Verbose
-            
+        function(result, isExceptionInfo) {
             let exceptionDetails = null;
             if (isExceptionInfo) {
-                // isExceptionInfo can be an object with description, or just a value if script threw non-Error
                 if (typeof isExceptionInfo === 'object' && isExceptionInfo !== null) {
                     exceptionDetails = isExceptionInfo.description || isExceptionInfo.value || JSON.stringify(isExceptionInfo);
                 } else {
@@ -51,27 +51,157 @@ function handleEvaluateScriptRequest(requestDetails) {
                 }
                  console.error(`Panel: Exception during script evaluation (ReqID: ${requestDetails.requestId}):`, exceptionDetails, "Original script:", requestDetails.scriptToEvaluate);
             }
-
-            const responsePayload = {
+            sendResponseToBackend({
                 type: "EVALUATION_RESULT",
                 requestId: requestDetails.requestId,
-                result: result, // This will be undefined if an exception occurred and not caught by user script
-                isException: !!isExceptionInfo, // Coerce to boolean
+                result: result,
+                isException: !!isExceptionInfo,
                 exceptionInfo: exceptionDetails
-            };
-
-            if (panelPort) {
-                panelPort.postMessage({
-                    type: "FORWARD_TO_WEBSOCKET_SERVER",
-                    payload: responsePayload
-                });
-                // console.log("Panel: Sent EVALUATION_RESULT to background for forwarding:", responsePayload); // Verbose
-            } else {
-                console.error("Panel: panelPort is null, cannot send EVALUATION_RESULT.");
-            }
+            });
         }
     );
 }
+
+async function handleCaptureElementsScreenshotRequest(requestDetails) {
+    const { requestId, selectors } = requestDetails;
+    if (!requestId || !Array.isArray(selectors) || selectors.length === 0) {
+        console.error("Panel: Invalid CAPTURE_ELEMENTS_SCREENSHOT request", requestDetails);
+        sendResponseToBackend({
+            type: "ELEMENTS_SCREENSHOT_RESULT",
+            requestId: requestId || "unknown_screenshot_request",
+            imageData: {},
+            error: "Invalid CAPTURE_ELEMENTS_SCREENSHOT request structure or empty selectors."
+        });
+        return;
+    }
+
+    console.log(`Panel: Starting screenshot capture for requestId: ${requestId}, selectors:`, selectors);
+
+    const getElementDataScript = `
+        (() => {
+            const selectors = ${JSON.stringify(selectors)};
+            const results = {};
+            const dpr = window.devicePixelRatio || 1;
+            selectors.forEach(selector => {
+                const element = document.querySelector(selector);
+                if (element) {
+                    const rect = element.getBoundingClientRect();
+                    // Ensure all properties are serializable numbers
+                    results[selector] = {
+                        x: rect.x,
+                        y: rect.y,
+                        width: rect.width,
+                        height: rect.height,
+                        top: rect.top,
+                        left: rect.left,
+                        devicePixelRatio: dpr
+                    };
+                } else {
+                    results[selector] = null; // Element not found
+                }
+            });
+            return results;
+        })();
+    `;
+
+    try {
+        const elementDataMap = await new Promise((resolve, reject) => {
+            chrome.devtools.inspectedWindow.eval(getElementDataScript, (result, isException) => {
+                if (isException) {
+                    console.error('Panel: Error getting element data:', isException);
+                    reject(isException.description || isException.value || JSON.stringify(isException));
+                } else {
+                    resolve(result);
+                }
+            });
+        });
+
+        if (!elementDataMap) {
+            throw new Error("Failed to retrieve element data from page.");
+        }
+        
+        console.log(`Panel: Got element data for ${requestId}:`, elementDataMap);
+
+        const fullPageDataUrl = await new Promise((resolve, reject) => {
+            chrome.tabs.captureVisibleTab(chrome.devtools.inspectedWindow.tabId, { format: "png" }, (dataUrl) => {
+                if (chrome.runtime.lastError) {
+                    console.error('Panel: Error capturing visible tab:', chrome.runtime.lastError.message);
+                    reject(chrome.runtime.lastError.message);
+                } else if (!dataUrl) {
+                    console.error('Panel: captureVisibleTab returned empty dataUrl.');
+                    reject('captureVisibleTab returned empty dataUrl.');
+                }
+                else {
+                    resolve(dataUrl);
+                }
+            });
+        });
+
+        console.log(`Panel: Captured full page for ${requestId}. Processing crops...`);
+
+        const mainImage = new Image();
+        const imageDataResults = {};
+        
+        await new Promise((resolveImageLoad, rejectImageLoad) => {
+            mainImage.onload = async () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                for (const selector in elementDataMap) {
+                    const data = elementDataMap[selector];
+                    if (data && data.width > 0 && data.height > 0) {
+                        const dpr = data.devicePixelRatio;
+                        canvas.width = Math.round(data.width * dpr);
+                        canvas.height = Math.round(data.height * dpr);
+                        
+                        // sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight
+                        // Important: source coordinates (sx, sy) must be relative to the captured image,
+                        // which is the viewport. data.left and data.top are viewport coordinates.
+                        // We multiply by DPR for high-resolution displays.
+                        ctx.drawImage(
+                            mainImage,
+                            Math.round(data.left * dpr), // source x
+                            Math.round(data.top * dpr),  // source y
+                            Math.round(data.width * dpr),// source width
+                            Math.round(data.height * dpr),// source height
+                            0,                         // destination x on canvas
+                            0,                         // destination y on canvas
+                            Math.round(data.width * dpr), // destination width on canvas
+                            Math.round(data.height * dpr) // destination height on canvas
+                        );
+                        imageDataResults[selector] = canvas.toDataURL("image/png");
+                    } else {
+                        imageDataResults[selector] = null; // Element not found or zero size
+                    }
+                }
+                resolveImageLoad();
+            };
+            mainImage.onerror = (err) => {
+                 console.error('Panel: Failed to load main screenshot image:', err);
+                 rejectImageLoad("Failed to load main screenshot image for cropping.");
+            };
+            mainImage.src = fullPageDataUrl;
+        });
+        
+        console.log(`Panel: Finished cropping for ${requestId}. Sending results.`);
+        sendResponseToBackend({
+            type: "ELEMENTS_SCREENSHOT_RESULT",
+            requestId: requestId,
+            imageData: imageDataResults,
+            error: null
+        });
+
+    } catch (error) {
+        console.error(`Panel: Error during screenshot process for ${requestId}:`, error);
+        sendResponseToBackend({
+            type: "ELEMENTS_SCREENSHOT_RESULT",
+            requestId: requestId,
+            imageData: {},
+            error: typeof error === 'string' ? error : (error.message || "Unknown error in screenshot capture")
+        });
+    }
+}
+
 
 function scheduleReconnect() {
     if (userInitiatedDisconnect) return;
@@ -108,13 +238,13 @@ function connect(isUserClick = true) {
         console.log("Panel: Port (re)established with background script.");
 
         panelPort.onMessage.addListener(function(message) {
-          // console.log("Panel: Received message from background:", message); // Verbose
           if (message.type === "WEBSOCKET_MESSAGE") {
             if (message.data) {
-                if (message.data.type === 'EVALUATE_SCRIPT') { // The primary message type now
+                if (message.data.type === 'EVALUATE_SCRIPT') {
                     handleEvaluateScriptRequest(message.data);
+                } else if (message.data.type === 'CAPTURE_ELEMENTS_SCREENSHOT') {
+                    handleCaptureElementsScreenshotRequest(message.data);
                 } else {
-                    // Could log unhandled message types from server if necessary
                     console.warn("Panel: Received unhandled WebSocket message data type:", message.data.type, message.data);
                 }
             } else {
