@@ -1,78 +1,71 @@
-## Chrome DevTools Extension Summary (`./plugins/chrome`)
+## Go Web Service Summary (`./web`)
 
-This directory contains a Chrome DevTools extension designed to facilitate communication between a backend Go agent and an inspected web page.
+This directory contains the Go package that implements the backend HTTP and WebSocket server for the `vibrant` agent system. It uses the `panyam/goutils/http` library for WebSocket connection management and `panyam/goutils/conc` for message fanout.
 
 ### Purpose
 
-*   **Agent Communication**: Establishes a WebSocket connection to a backend Go agent server.
-*   **Page Interaction**: Receives commands from the agent server and executes them on the currently inspected web page. This allows the backend to programmatically control and query the web page.
-*   **Developer Feedback**: Logs actions and results to the DevTools console and the inspected page's console.
+*   **WebSocket Server**: Provides the primary communication channel (`/agents/{clientId}/subscribe`) for Chrome DevTools extensions to connect.
+*   **Remote Script Evaluation Orchestration**:
+    *   Exposes an HTTP POST endpoint (`/agents/{clientId}/eval`) that accepts raw JavaScript code.
+    *   Packages this script into an `EVALUATE_SCRIPT` WebSocket message (with a unique `requestId`).
+    *   Broadcasts this message to the specified connected Chrome extension (`clientId`).
+    *   Optionally (`?wait=true` on the POST endpoint), waits for an `EVALUATION_RESULT` message back from the extension for the given `requestId`.
+*   **Client & Request Management**: Manages active WebSocket connections per `clientId` and tracks pending evaluation requests that are awaiting a response.
 
-### Key Components & Functionality
+### Key Components & Functionality (`server.go`)
 
-1.  **`manifest.json`**:
-    *   Defines the extension (version 3).
-    *   Declares `devtools_page` (`devtools.html`) as the entry point for DevTools integration.
-    *   Specifies necessary `permissions` (storage, activeTab) and `host_permissions` (for `ws://localhost:9999/*`).
-    *   Registers the `background.js` service worker.
-    *   Defines icons.
+1.  **`Request` Struct**:
+    *   Represents an evaluation request sent to a client.
+    *   Fields: `Id` (unique request ID), `ClientId`, `Payload` (original script), `SentAt`, `Response` (result from client), `ResponseAt`, `err`, `finished`.
+    *   `recvChan chan string`: A buffered channel used by the `/eval?wait=true` HTTP handler to block and receive the script evaluation result from the WebSocket handler.
 
-2.  **`devtools.html` & `devtools.js`**:
-    *   `devtools.html` is a minimal HTML page that loads `devtools.js`.
-    *   `devtools.js` uses `chrome.devtools.panels.create()` to add a custom panel named "Agent Logger" to the Chrome DevTools window. This panel's UI is defined by `panel.html`.
+2.  **`Handler` Struct**:
+    *   Centralizes connection and request management.
+    *   `Fanouts map[string]*conc.FanOut[conc.Message[any]]`: Manages broadcasting messages to all WebSocket connections for a given `clientId`. Uses `panyam/goutils/conc.FanOut`.
+    *   `pendingRequests map[string]*Request`: Stores `Request` objects keyed by their `Id`, used to correlate incoming `EVALUATION_RESULT` messages with the originating HTTP request if it's waiting.
 
-3.  **`panel.html` & `panel.js` (The User Interface & Core Client Logic)**:
-    *   **UI (`panel.html`)**: Provides a simple interface within the "Agent Logger" DevTools panel:
-        *   An input field for the "Connection Name".
-        *   "Connect" and "Disconnect" buttons.
-        *   A status display area.
-    *   **Logic (`panel.js`)**:
-        *   **Connection Management**:
-            *   Establishes a long-lived communication port with `background.js`.
-            *   Handles user clicks on "Connect" and "Disconnect" buttons.
-            *   Sends `CONNECT_WEBSOCKET` and `DISCONNECT_WEBSOCKET` messages to `background.js`.
-            *   Stores the last used connection name in `sessionStorage` for convenience.
-        *   **Auto-Reconnection**:
-            *   If the WebSocket connection drops (and it wasn't a user-initiated disconnect), it attempts to reconnect automatically using an exponential backoff strategy (initial delay 1s, max delay 10s).
-            *   The user can always manually click "Connect" to override/initiate a connection.
-        *   **Message Handling**:
-            *   Receives `WEBSOCKET_MESSAGE` (containing commands from the Go server) and `WEBSOCKET_STATUS` updates from `background.js`.
-            *   Calls `executeInInspectedPage()` to process commands.
-        *   **`executeInInspectedPage(commandDetails)`**: This is the core of page interaction.
-            *   It takes the command data (parsed JSON from the WebSocket message).
-            *   Uses a `switch` statement based on `commandDetails.type`.
-            *   Constructs JavaScript code (`evalString`) to be executed in the context of the inspected page using `chrome.devtools.inspectedWindow.eval()`.
-            *   **Supported Commands**:
-                *   `SCROLL_TO_TOP`: Scrolls the page (or `ms-autoscroll-container` if present) to the top.
-                *   `SCROLL_TO_BOTTOM`: Scrolls the page (or `ms-autoscroll-container`) to the bottom.
-                *   `SCROLL_DELTA`: Scrolls by a specified `deltaX` and `deltaY`.
-                *   `QUERY_SELECTOR_ALL`: Executes `document.querySelectorAll()` with the given selector, extracts details (tagName, id, className, rect, innerText, outerHTML) for each element, and logs the results.
-                *   `SET_INPUT_VALUE`: Sets the `.value` of a target input/textarea element.
-                    *   Dispatches `input` and `change` events to simulate user interaction and trigger page listeners.
-                    *   Optionally, if `submit: true` and `submitSelector` are provided in the command, it will also dispatch a click event on the specified submit button.
-                *   `CLICK_ELEMENT`: Finds an element by selector and dispatches a `MouseEvent` ('click') to it, ensuring event listeners are triggered.
-            *   Logs actions, results, and errors to both the panel's console and the inspected page's console using distinct prefixes (`[AgentAction]`, `[AgentQueryResult]`, etc.).
+3.  **`Conn` Struct (implements `gohttp.WSHandler`)**:
+    *   Wraps `gohttp.JSONConn` to handle individual WebSocket connections.
+    *   **`Validate`**: Extracts `clientId` from the path for new WebSocket connections.
+    *   **`OnStart`**: Called when a new WebSocket connection is established.
+        *   Registers the connection with the appropriate `FanOut` in the `Handler`.
+        *   Proactively sends a "welcome" `EVALUATE_SCRIPT` message to the newly connected client (e.g., to log a welcome message in the client's console and get basic page info).
+    *   **`HandleMessage`**: **Crucial for receiving results.**
+        *   Called when a message (expected to be JSON) is received from the WebSocket client.
+        *   Parses the message and checks if its `type` is `EVALUATION_RESULT`.
+        *   If so, it extracts the `requestId`, `result`, `isException`, and `exceptionInfo`.
+        *   Looks up the original `Request` in `handler.pendingRequests` using the `requestId`.
+        *   If found and not already finished, it updates the `Request` object with the response details and sends the serialized result (or error) to the `req.recvChan`.
+        *   Marks the request as finished and removes it from `pendingRequests`.
+    *   **`OnClose`**: Handles cleanup by removing the connection from the `FanOut`.
+    *   **`OnTimeout`**: Logs timeout.
 
-4.  **`background.js` (Service Worker)**:
-    *   **Persistent Logic**: Manages WebSocket connections, as panel UI can be closed/reopened.
-    *   **Connection Multiplexing**: Maintains a map of active WebSocket connections, keyed by `tabId`, allowing multiple DevTools panels (for different tabs) to have independent agent connections.
-    *   **WebSocket Handling**:
-        *   Receives "CONNECT_WEBSOCKET" messages from `panel.js`.
-        *   Establishes WebSocket connection to `ws://localhost:9999/agents/<connectionName>/subscribe`.
-        *   Relays messages received from the WebSocket server to the appropriate `panel.js` instance (for the correct tab).
-        *   Sends status updates (`WEBSOCKET_STATUS`) back to `panel.js` (e.g., "Connected", "Disconnected", "Error").
-    *   **Lifecycle Management**:
-        *   Listens for `chrome.tabs.onRemoved` and `chrome.tabs.onUpdated` (for navigation) to clean up and close WebSockets associated with closed or navigated-away tabs.
-        *   Handles `onDisconnect` events from the panel's communication port.
+4.  **`Handler` Methods**:
+    *   **`SubmitEvalRequest(clientId string, script string) *Request`**:
+        *   Creates a `Request` object.
+        *   **Stores this `Request` in `pendingRequests`**.
+        *   Constructs the `EVALUATE_SCRIPT` WebSocket message map: `{ "type": "EVALUATE_SCRIPT", "requestId": req.Id, "scriptToEvaluate": script }`.
+        *   Uses `BroadcastToAgent` to send it.
+        *   Returns the `Request` object (its `recvChan` is used by the HTTP handler if waiting).
+    *   **`BroadcastToAgent(clientId string, payload map[string]any)`**: Sends the payload to the fanout for the specified `clientId`.
+
+5.  **`NewServeMux()`**:
+    *   Configures the HTTP routing for the agent server.
+    *   `GET /agents/{clientId}/subscribe`: Handles WebSocket upgrade requests using `gohttp.WSServe(handler, nil)`.
+    *   `POST /agents/{clientId}/eval`:
+        *   This is the primary endpoint for external systems (like the `vibrant client` CLI) to trigger script evaluations.
+        *   Reads the **raw request body as the JavaScript string** to be evaluated.
+        *   Calls `handler.SubmitEvalRequest()` to send the script to the client via WebSocket.
+        *   If the query parameter `?wait=true` is present, this HTTP handler blocks and waits for a message on the `Request.recvChan` (with a timeout). It then returns the script's result (or error) in its HTTP response.
+        *   If `?wait=true` is not present, it responds immediately with the `requestId`.
+    *   `GET /test_eval?agent=<name>&script=<javascript>`: A simple GET endpoint for testing the `EVALUATE_SCRIPT` flow without needing a POST body.
 
 ### Workflow Summary
 
-1.  User opens DevTools on a webpage.
-2.  The "Agent Logger" panel is available.
-3.  User enters a "Connection Name" and clicks "Connect".
-4.  `panel.js` tells `background.js` to establish a WebSocket connection for that tab and name.
-5.  `background.js` connects to `ws://localhost:9999/agents/<name>/subscribe`.
-6.  Status is relayed back to `panel.js`.
-7.  When the Go agent server sends a JSON message over WebSocket, `background.js` forwards it to the relevant `panel.js`.
-8.  `panel.js`'s `executeInInspectedPage` function interprets the command in the message and uses `chrome.devtools.inspectedWindow.eval()` to run JavaScript code on the inspected page, performing the requested action (scroll, query, set value, click).
-9.  If the WebSocket connection drops, `panel.js` attempts to reconnect automatically unless the user explicitly disconnected.
+1.  The Go agent server (started by `vibrant agents serve`) listens (default `localhost:9999`).
+2.  Chrome DevTools extension connects to `GET /agents/{clientId}/subscribe`. `Conn.OnStart` is called, a welcome script is sent.
+3.  An external trigger (e.g., `vibrant client ...` CLI, or another service) makes a `POST /agents/{clientId}/eval` request with raw JavaScript in the body.
+4.  The HTTP handler calls `handler.SubmitEvalRequest`. This generates a `requestId`, stores the request, and broadcasts an `EVALUATE_SCRIPT` message over WebSocket to the specified `clientId`.
+5.  The Chrome extension receives the `EVALUATE_SCRIPT` message, executes the script on the page, and sends an `EVALUATION_RESULT` message (with the same `requestId` and the script's output/error) back over WebSocket.
+6.  `Conn.HandleMessage` on the server receives this result, finds the pending `Request` by `requestId`, and sends the result to the `recvChan` of that `Request`.
+7.  If the original `POST /agents/{clientId}/eval` request included `?wait=true`, its handler receives the result from `recvChan` and includes it in the HTTP response.
