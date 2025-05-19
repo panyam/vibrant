@@ -7,17 +7,17 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
+	"os" // Keep for os.Getenv as a fallback if rootCurrentClientId isn't populated by PersistentPreRun
 	"strconv"
 	"strings"
-	"text/template" // Import the text/template package
+	"text/template"
 	"time"
 
 	"github.com/panyam/vibrant/tools"
 	"github.com/spf13/cobra"
 )
 
-var currentClientId string
+// Note: currentClientId is now rootCurrentClientId from cmd/root.go (same package 'main')
 
 var clientCmd = &cobra.Command{
 	Use:   "client",
@@ -25,36 +25,35 @@ var clientCmd = &cobra.Command{
 	Long:  `This command group allows sending various JavaScript evaluation commands to a specific client connected to the agent server.`,
 }
 
-// sendEvalScript remains the same as the previous correct version
-func sendEvalScript(clientIdFromFlag string, scriptToEvaluate string, waitForResult bool) (any, error) {
-	clientId := clientIdFromFlag
-	if clientId == "" {
-		clientId = strings.TrimSpace(os.Getenv("VIBRANT_CLIENT_ID"))
+// sendEvalScript now uses rootCurrentClientId
+// It sends the raw scriptToEvaluate string as the POST body.
+func sendEvalScript(scriptToEvaluate string, waitForResult bool) (any, error) {
+	// rootCurrentClientId should be populated by Cobra's persistent flag handling by now.
+	// The PersistentPreRunE in root.go also attempts to set it from ENV if the flag wasn't used.
+	clientIdToUse := rootCurrentClientId
+	if clientIdToUse == "" { // Fallback if PersistentPreRun didn't set it
+		clientIdToUse = strings.TrimSpace(os.Getenv("VIBRANT_CLIENT_ID"))
 	}
-	if clientId == "" {
-		return nil, fmt.Errorf("client id not provided. Pass the -i flag or set VIBRANT_CLIENT_ID envvar")
+
+	if clientIdToUse == "" {
+		return nil, fmt.Errorf("client id not provided. Use -i flag or set VIBRANT_CLIENT_ID env var")
 	}
 
-	evalPayload := scriptToEvaluate // map[string]string{ "scriptToEvaluate": scriptToEvaluate, }
-	jsonBody := []byte(evalPayload)
+	// The /eval endpoint in web/server.go now expects the raw script as the body.
+	// It will internally create a requestId.
+	// If wait=true, it still expects a JSON response like {"requestId": "...", "response": ...}
+	// If wait=false, it responds with {"status": "...", "requestId": "..."}
 
-	/*
-		jsonBody, err := json.Marshal(evalPayload)
-		if err != nil {
-			return nil, fmt.Errorf("error marshalling eval payload: %w", err)
-		}
-	*/
-
-	endpointURL := fmt.Sprintf("http://localhost:9999/agents/%s/eval", clientId)
+	endpointURL := fmt.Sprintf("http://localhost:9999/agents/%s/eval", clientIdToUse)
 	if waitForResult {
 		endpointURL += "?wait=true"
 	}
 
-	req, err := http.NewRequest("POST", endpointURL, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequest("POST", endpointURL, strings.NewReader(scriptToEvaluate))
 	if err != nil {
 		return nil, fmt.Errorf("error creating new HTTP request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "text/plain")
 
 	httpClient := &http.Client{Timeout: 40 * time.Second}
 	resp, err := httpClient.Do(req)
@@ -74,15 +73,17 @@ func sendEvalScript(clientIdFromFlag string, scriptToEvaluate string, waitForRes
 
 	var result map[string]any
 	if err := json.Unmarshal(respBody, &result); err != nil {
+		log.Printf("Could not unmarshal JSON response from /eval: %v. Raw response: %s", err, string(respBody))
 		return string(respBody), nil
 	}
 
 	if waitForResult {
 		if respData, ok := result["response"]; ok {
 			return respData, nil
-		} else if errData, ok := result["error"]; ok { // Check if server itself sent an error in JSON
-			return nil, fmt.Errorf("script evaluation error from server: %v", errData)
+		} else if errData, ok := result["error"]; ok {
+			return nil, fmt.Errorf("server indicated script evaluation error: %v", errData)
 		}
+		log.Printf("Warning: /eval?wait=true response did not contain 'response' or 'error' field: %v", result)
 		return result, nil
 	}
 	return result, nil
@@ -98,7 +99,7 @@ var clientCmdScrollToTop = &cobra.Command{
           scroller.scrollTo(0, 0);
           return 'Scrolled to top';
         })();`
-		_, err := sendEvalScript(currentClientId, script, false)
+		_, err := sendEvalScript(script, false)
 		if err != nil {
 			log.Fatalf("Error sending scrolltop command: %v", err)
 		}
@@ -117,7 +118,7 @@ var clientCmdScrollToBottom = &cobra.Command{
           (scroller === window ? window : scroller).scrollTo(0, target);
           return 'Scrolled to bottom';
         })();`
-		_, err := sendEvalScript(currentClientId, script, false)
+		_, err := sendEvalScript(script, false)
 		if err != nil {
 			log.Fatalf("Error sending scrollbottom command: %v", err)
 		}
@@ -140,7 +141,7 @@ var clientCmdScrollDelta = &cobra.Command{
           (scroller === window ? window : scroller).scrollBy(0, %f);
           return 'Scrolled by deltaY: %f';
         })();`, dy, dy)
-		_, err = sendEvalScript(currentClientId, script, false)
+		_, err = sendEvalScript(script, false)
 		if err != nil {
 			log.Fatalf("Error sending scrolldelta command: %v", err)
 		}
@@ -148,12 +149,11 @@ var clientCmdScrollDelta = &cobra.Command{
 	},
 }
 
-// --- Template approach for SET_INPUT_VALUE ---
 type setInputValueScriptData struct {
-	Selector       string // This will be a JSON-encoded string, e.g., "\"#myInput\""
-	Value          string // Also JSON-encoded
+	Selector       string
+	Value          string
 	Submit         bool
-	SubmitSelector string // Also JSON-encoded
+	SubmitSelector string
 }
 
 const setInputValueScriptTplString = `
@@ -166,7 +166,7 @@ const setInputValueScriptTplString = `
         el.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
         let report = { success: true, selector: {{.Selector}}, valueSet: true, submitted: false, submitButtonFound: null };
         
-        if ({{.Submit}} && {{.SubmitSelector}} !== "\"\"") { // Check if marshalled SubmitSelector is not an empty JSON string ""
+        if ({{.Submit}} && {{.SubmitSelector}} !== "\"\"") { 
             const submitBtn = document.querySelector({{.SubmitSelector}});
             if (submitBtn instanceof HTMLElement) {
                 report.submitButtonFound = true;
@@ -190,7 +190,7 @@ const setInputValueScriptTplString = `
     })();
 `
 
-var jsSetValueTemplate *template.Template // Parsed template
+var jsSetValueTemplate *template.Template
 
 func buildSetInputValueScriptUsingTemplate(selector string, value string, submit bool, submitSelector string) (string, error) {
 	sSelectorBytes, err := json.Marshal(selector)
@@ -220,15 +220,13 @@ func buildSetInputValueScriptUsingTemplate(selector string, value string, submit
 	return scriptBuf.String(), nil
 }
 
-// --- End of Template approach ---
-
 var clientCmdToolCallRespond = &cobra.Command{
 	Use:   "respond",
 	Short: "Sets value in 'ms-function-call-chunk textarea' and optionally submits.",
 	Run: func(cmd *cobra.Command, args []string) {
-		fromClipboard, _ := cmd.Flags().GetBool("from-clipboard")
-		submitFlag, _ := cmd.Flags().GetBool("submit") // Renamed to avoid conflict
-		value, err := tools.GetInputFromUserOrClipboard(fromClipboard)
+		// fromClipboard is now rootFromClipboard from cmd/root.go
+		submitFlag, _ := cmd.Flags().GetBool("submit")
+		value, err := tools.GetInputFromUserOrClipboard(rootFromClipboard) // Use global rootFromClipboard
 		if err != nil {
 			log.Fatalf("Error getting input: %v", err)
 		}
@@ -240,7 +238,7 @@ var clientCmdToolCallRespond = &cobra.Command{
 			log.Fatalf("Error building script: %v", err)
 		}
 
-		response, err := sendEvalScript(currentClientId, script, true)
+		response, err := sendEvalScript(script, false)
 		if err != nil {
 			log.Fatalf("Error sending respond command: %v", err)
 		}
@@ -252,9 +250,9 @@ var clientCmdSendPrompt = &cobra.Command{
 	Use:   "send",
 	Short: "Sets value in 'ms-prompt-input-wrapper textarea' and optionally submits.",
 	Run: func(cmd *cobra.Command, args []string) {
-		fromClipboard, _ := cmd.Flags().GetBool("from-clipboard")
-		submitFlag, _ := cmd.Flags().GetBool("submit") // Renamed
-		value, err := tools.GetInputFromUserOrClipboard(fromClipboard)
+		// fromClipboard is now rootFromClipboard from cmd/root.go
+		submitFlag, _ := cmd.Flags().GetBool("submit")
+		value, err := tools.GetInputFromUserOrClipboard(rootFromClipboard) // Use global rootFromClipboard
 		if err != nil {
 			log.Fatalf("Error getting input: %v", err)
 		}
@@ -266,7 +264,7 @@ var clientCmdSendPrompt = &cobra.Command{
 			log.Fatalf("Error building script: %v", err)
 		}
 
-		response, err := sendEvalScript(currentClientId, script, true)
+		response, err := sendEvalScript(script, false)
 		if err != nil {
 			log.Fatalf("Error sending prompt command: %v", err)
 		}
@@ -279,7 +277,7 @@ var clientCmdGetTitle = &cobra.Command{
 	Short: "Gets the title of the inspected page",
 	Run: func(cmd *cobra.Command, args []string) {
 		script := "document.title;"
-		response, err := sendEvalScript(currentClientId, script, true)
+		response, err := sendEvalScript(script, true)
 		if err != nil {
 			log.Fatalf("Error sending gettitle command: %v", err)
 		}
@@ -288,7 +286,6 @@ var clientCmdGetTitle = &cobra.Command{
 }
 
 func init() {
-	// Parse the template for SET_INPUT_VALUE once.
 	tpl, err := template.New("setInputValue").Parse(setInputValueScriptTplString)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to parse internal setInputValueScriptTplString: %v", err))
