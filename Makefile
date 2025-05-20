@@ -27,9 +27,6 @@ resymlink:
 	cd locallinks && ln -s ../../oneauth
 	cd locallinks && ln -s ../../s3gen
 
-systemprompt:
-	cat prompts/systemprompt.txt
-
 prompt:
 	source ~/personal/.shhelpers && files_for_llm `find . | grep -v apiclient | grep -v pnpm | grep -v llmprompts | grep -v node.mod | grep -v .git | grep -v gen | grep -v web.static | grep -v output | grep -v content | grep -v dist | grep -v ./static/css/tailwind.css | grep -v go.sum | grep -v pnpm | grep -v "\.png" | grep -v "\.jpeg" | grep -v "\.jpg" | grep -v LICENSE`
 
