@@ -12,11 +12,11 @@
 *   **CLI (`./cmd`)**: Built with Cobra.
     *   **Persistent Flags (`root.go`)**: `--client-id` (`-i`) for target browser client, `--from-clipboard` (`-c`) for clipboard input.
     *   **`vibrant agents serve` (`agents.go`)**: Starts the dedicated agent communication server (default port `9999`) using components from the `../web` package.
-    *   **`vibrant client` (`client.go`, `screenshot.go`, `paste.go`, etc.)**: A command group to send instructions to a Chrome extension client via the agent server.
+    *   **`vibrant client` (`client.go`, etc.)**: A command group to send instructions to a Chrome extension client via the agent server.
         *   `eval` related commands (`gettitle`, `scrolltop`, etc.): Send JavaScript to be evaluated via the agent server's `/agents/{clientId}/eval` HTTP POST endpoint.
-        *   `screenshot` command: Captures screenshots of specified DOM elements. Communicates with `/agents/{clientId}/screenshots`.
-        *   `paste` command (New): Simulates pasting content (e.g., an image from a file or data URL) into a specified DOM element. Communicates with `/agents/{clientId}/paste`.
         *   Supports both fire-and-forget operations and waiting for results (`?wait=true` on relevant endpoints).
+    *   `vibrant screenshot` command: Captures screenshots of specified DOM elements. Communicates with `/agents/{clientId}/screenshots`.
+    *   `vibrant paste` command (New): Simulates pasting content (e.g., an image from a file or data URL) into a specified DOM element. Communicates with `/agents/{clientId}/paste`.
     *   **`vibrant calls` (`calls.go`)**: Commands to list and respond to tool calls, often from an AI interface, by running local tools (`../tools`) and injecting results back into the page.
     *   **`vibrant tools` (`tools.go`)**: Utilities to list, describe (JSON), and run local developer tools defined in the `../tools` package.
     *   **`vibrant canvas` (`canvas.go`)**: Starts a separate frontend web server.
