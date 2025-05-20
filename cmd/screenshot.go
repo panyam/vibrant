@@ -54,7 +54,7 @@ Optionally, the first successful screenshot can be copied to the clipboard as a 
 				log.Fatalf("Error marshalling request body: %v", err)
 			}
 
-			endpointURL := fmt.Sprintf("http://localhost:9999/agents/%s/screenshots?wait=true", rootCurrentClientId)
+			endpointURL := fmt.Sprintf("http://%s/agents/%s/screenshots?wait=true", rootVibrantHost, rootCurrentClientId)
 			req, err := http.NewRequest("POST", endpointURL, bytes.NewBuffer(jsonBody))
 			if err != nil {
 				log.Fatalf("Error creating new HTTP request: %v", err)

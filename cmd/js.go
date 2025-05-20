@@ -32,7 +32,7 @@ func sendEvalScript(scriptToEvaluate string, waitForResult bool) (any, error) {
 	// If wait=true, it still expects a JSON response like {"requestId": "...", "response": ...}
 	// If wait=false, it responds with {"status": "...", "requestId": "..."}
 
-	endpointURL := fmt.Sprintf("http://localhost:9999/agents/%s/eval", clientIdToUse)
+	endpointURL := fmt.Sprintf("http://%s/agents/%s/eval", rootVibrantHost, clientIdToUse)
 	if waitForResult {
 		endpointURL += "?wait=true"
 	}

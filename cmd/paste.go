@@ -132,7 +132,7 @@ If text data is on the clipboard, it will be used directly if it's a data URL.`,
 				log.Fatalf("Error marshalling request body: %v", err)
 			}
 
-			endpointURL := fmt.Sprintf("http://localhost:9999/agents/%s/paste?wait=true", rootCurrentClientId)
+			endpointURL := fmt.Sprintf("http://%s/agents/%s/paste?wait=true", rootVibrantHost, rootCurrentClientId)
 			req, err := http.NewRequest("POST", endpointURL, bytes.NewBuffer(jsonBody))
 			if err != nil {
 				log.Fatalf("Error creating new HTTP request: %v", err)
