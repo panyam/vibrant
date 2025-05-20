@@ -36,7 +36,7 @@ This directory contains the Go package responsible for defining, managing, and e
 3.  **Concrete Tool Implementations** (each in its own file):
     *   **`readfile.go` (`ReadFile` tool)**: Reads file content.
     *   **`listfiles.go` (`ListFiles` tool)**: Lists files/directories.
-    *   **`createfile.go` (`CreateFile` tool)**: Creates/overwrites a file.
+    *   **`writefile.go` (`WriteFile` tool)**: Creates/overwrites a file.
     *   **`applydiff.go` (`ApplyFileDiff` tool)**: Applies a diff using the system `patch` command.
 
 4.  **`utils.go`**:
@@ -46,8 +46,7 @@ This directory contains the Go package responsible for defining, managing, and e
 
 *   `read_file`
 *   `list_files`
-*   `create_file`
-*   `apply_file_diff`
+*   `write_file`
 
 ### Workflow Summary
 

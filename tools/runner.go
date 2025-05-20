@@ -12,10 +12,10 @@ var tools map[string]Tool
 
 func init() {
 	tools = map[string]Tool{
-		"read_file":       &ReadFile{BaseFileTool{ProjectRoot: "./"}},
-		"list_files":      &ListFiles{BaseFileTool{ProjectRoot: "./"}},
-		"create_file":     &CreateFile{BaseFileTool{ProjectRoot: "./"}},
-		"apply_file_diff": &ApplyFileDiff{BaseFileTool{ProjectRoot: "./"}},
+		"read_file":  &ReadFile{BaseFileTool{ProjectRoot: "./"}},
+		"list_files": &ListFiles{BaseFileTool{ProjectRoot: "./"}},
+		"write_file": &WriteFile{BaseFileTool{ProjectRoot: "./"}},
+		// "apply_file_diff": &ApplyFileDiff{BaseFileTool{ProjectRoot: "./"}},
 	}
 
 	err := clipboard.Init()

@@ -5,34 +5,34 @@ import (
 	"os"
 )
 
-type CreateFile struct {
+type WriteFile struct {
 	BaseFileTool
 }
 
-func (r *CreateFile) Name() string {
-	return "create_file"
+func (r *WriteFile) Name() string {
+	return "write_file"
 }
 
-func (r *CreateFile) Description() string {
+func (r *WriteFile) Description() string {
 	return `Creates and makes sure a file exists with the given contents.  If a given file already exists, then it is overridden with the new contents.`
 }
 
-func (r *CreateFile) Parameters() []*Parameter {
+func (r *WriteFile) Parameters() []*Parameter {
 	return []*Parameter{
 		{
 			Name:        "path",
-			Description: "Path of the file to create or overwrite.",
+			Description: "Path of the file to write or overwrite.",
 			Type:        "string",
 		},
 		{
 			Name:        "contents",
-			Description: "Text contents to set in the file that is created (or overwritten)",
+			Description: "Text contents to set in the file that is writed (or overwritten)",
 			Type:        "string",
 		},
 	}
 }
 
-func (r *CreateFile) Returns() []*Parameter {
+func (r *WriteFile) Returns() []*Parameter {
 	return []*Parameter{
 		{
 			Name:        "result",
@@ -42,7 +42,7 @@ func (r *CreateFile) Returns() []*Parameter {
 	}
 }
 
-func (r *CreateFile) Run(args map[string]any) (any, error) {
+func (r *WriteFile) Run(args map[string]any) (any, error) {
 	path := args["path"].(string)
 	fullpath, err := r.ResolvePath(path)
 	if err != nil {
