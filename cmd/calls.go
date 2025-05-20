@@ -132,7 +132,7 @@ func callsCmdToolCallRespond() *cobra.Command {
 
 			// We have the result so now send it back!
 
-			submitFlag, _ := cmd.Flags().GetBool("submit")
+			dryrun, _ := cmd.Flags().GetBool("dryrun")
 			value := result.(string)
 			valueEscaped, err := json.Marshal(value)
 			if err != nil {
@@ -190,7 +190,7 @@ func callsCmdToolCallRespond() *cobra.Command {
 			if err := tpl.Execute(&scriptBuf, map[string]any{
 				"callIndex": callIndex,
 				"value":     string(valueEscaped),
-				"submit":    submitFlag,
+				"submit":    !dryrun,
 			}); err != nil {
 				log.Fatalf("failed to execute setInputValue template: %v", err)
 			}
@@ -203,7 +203,7 @@ func callsCmdToolCallRespond() *cobra.Command {
 			log.Printf("Respond command sent. Result: %v", response)
 		},
 	}
-	out.Flags().BoolP("submit", "s", false, "Induce a 'submit' after the value is set (default true)")
+	out.Flags().BoolP("dryrun", "d", false, "Whether to just set the content in the field or also induce a 'submit' after the value is set")
 	return out
 }
 
