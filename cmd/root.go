@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -10,8 +11,12 @@ import (
 // Global persistent flags - these will be accessible by all commands.
 // Variables are typically defined at the package level if they are to be truly global
 // and modified by PersistentPreRun or flag parsing.
+const DEFAULT_VIBRANT_HOST = "localhost:9999"
+
 var rootCurrentClientId string
+var rootVibrantHost string
 var rootFromClipboard bool
+
 // var dslFilePath string // This was from your original root.go, kept for context
 
 var rootCmd = &cobra.Command{
@@ -32,6 +37,16 @@ var rootCmd = &cobra.Command{
 				rootCurrentClientId = envClientId
 			}
 		}
+
+		if !cmd.Flags().Changed("host") {
+			envVibrantHost := os.Getenv("VIBRANT_HOST")
+			if envVibrantHost != "" {
+				rootVibrantHost = envVibrantHost
+			} else {
+				log.Println("Using default host: ", DEFAULT_VIBRANT_HOST)
+				rootVibrantHost = DEFAULT_VIBRANT_HOST
+			}
+		}
 		// If after checking flag and env, it's still empty, some commands might error out later.
 		// rootFromClipboard is handled directly by its flag.
 		return nil
@@ -50,6 +65,7 @@ func init() {
 	// The default value for client-id will be "" if VIBRANT_CLIENT_ID is not set.
 	// Commands themselves will need to check if rootCurrentClientId is populated.
 	rootCmd.PersistentFlags().StringVarP(&rootCurrentClientId, "client-id", "i", os.Getenv("VIBRANT_CLIENT_ID"), "ID of the client. Default from VIBRANT_CLIENT_ID env var if set.")
+	rootCmd.PersistentFlags().StringVarP(&rootVibrantHost, "host", "i", os.Getenv("VIBRANT_HOST"), "Host to connect our client to.  Default from VIBRANT_CLIENT_ID env var if set otherwise localhost:9999.")
 	rootCmd.PersistentFlags().BoolVarP(&rootFromClipboard, "from-clipboard", "c", false, "Read input from clipboard instead of from stdin (where applicable).")
 
 	// rootCmd.PersistentFlags().StringVarP(&dslFilePath, "file", "f", "", "Path to the DSL file (required by many commands)")
