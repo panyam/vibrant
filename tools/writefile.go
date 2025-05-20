@@ -25,11 +25,13 @@ func (r *WriteFile) Parameters() []*Parameter {
 			Name:        "path",
 			Description: "Path of the file to write or overwrite.",
 			Type:        "string",
+			Required:    true,
 		},
 		{
 			Name:        "encoding",
 			Description: "This should be one of 'plain', 'base64' or 'json' to specify the encoding",
 			Type:        "string",
+			Required:    true,
 		},
 		{
 			Name: "contents",
@@ -41,7 +43,8 @@ func (r *WriteFile) Parameters() []*Parameter {
 				"base64":	File contents will be first base64 decoded and then written to.  Use this for saving binary content like images and media.
 				"json":		JSON encoded string.   The JSON decoding of this string must result in a raw string.
 			`,
-			Type: "string",
+			Type:     "string",
+			Required: true,
 		},
 	}
 }

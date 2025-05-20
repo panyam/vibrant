@@ -58,14 +58,22 @@ func ToolsJson() {
 	var out []any
 	for _, tool := range tools {
 		props := map[string]any{}
+		var required []string
 		for _, param := range tool.Parameters() {
 			props[param.Name] = param.Json()
+			if param.Required {
+				required = append(required, param.Name)
+			}
 		}
-		out = append(out, map[string]any{
+		tj := map[string]any{
 			"name":        tool.Name(),
 			"description": tool.Description(),
 			"parameters":  map[string]any{"type": "object", "properties": props},
-		})
+		}
+		if required != nil {
+			tj["required"] = required
+		}
+		out = append(out, tj)
 	}
 
 	b, err := json.Marshal(out)

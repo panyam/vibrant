@@ -6,6 +6,7 @@ type Parameter struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Type        string `json:"type"`
+	Required    bool
 }
 
 func (p *Parameter) Json() any {

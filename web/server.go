@@ -265,7 +265,7 @@ func (c *Conn) OnStart(conn *websocket.Conn) error {
 
 	go func() {
 		time.Sleep(1 * time.Second)
-		welcomeScript := `
+		welcomeScript := `(() => {
 				console.log('[AgentWelcome] Go backend says hello!')
 				console.log('Location: ' + window.location.href + '. Title: ' + document.title + '. Timestamp: ' + new Date().toLocaleTimeString())
 				let vibStyles = document.querySelector("style[vibrant]")
@@ -275,9 +275,11 @@ func (c *Conn) OnStart(conn *websocket.Conn) error {
 					vibStyles.setAttribute("vibrant", "true")
 					head.appendChild(vibStyles)
 				}
-				setTimeout(() => { vibStyles.innerText = "code { max-height: 150px; } ms-text-chunk { max-height: 200px; overflow: scroll; }" }, 10)
+				setTimeout(() => {
+					vibStyles.innerText = "code { max-height: 150px; } ms-text-chunk { max-height: 200px; overflow-y: scroll; }"
+				}, 10);
 				({ pageTitle: document.title, userAgent: navigator.userAgent, connectionTime: new Date().toISOString() })
-				`
+			})()`
 		req := NewRequest(c.ClientId, welcomeScript, "EVALUATE_SCRIPT")
 		c.handler.SubmitRequest("EVALUATE_SCRIPT", req)
 		log.Printf("Client %s: Sent welcome EVALUATE_SCRIPT.", c.ClientId)
