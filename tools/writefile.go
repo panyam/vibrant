@@ -79,7 +79,7 @@ func (r *WriteFile) Run(args map[string]any) (any, error) {
 		// json encoding
 		var out string
 		if err := json.Unmarshal([]byte(contents), &out); err != nil {
-			log.Fatal("Cannot unmarshall json: ", err)
+			log.Print("Using as is.  Cannot unmarshall json: ", err)
 		} else {
 			log.Println("Here.....")
 			contents = out

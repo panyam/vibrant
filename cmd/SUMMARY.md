@@ -29,7 +29,7 @@ This directory contains the main application entry point and command-line interf
     *   **Subcommands**:
         *   `scrolltop`, `scrollbottom`, `scrolldelta [deltaY]`: Send predefined JavaScript snippets for page scrolling.
         *   `gettitle`: Sends a script to get `document.title` and waits for/prints the result.
-    *   The `init()` function in this file also registers commands defined in other `client_*.go` files (like `screenshot.go` and `client_paste.go`).
+    *   The `init()` function in this file also registers commands defined in other `client_*.go` files (like `screenshot.go` and `paste.go`).
 
 5.  **`screenshot.go`**:
     *   Defines the `vibrant screenshot` command.
@@ -37,25 +37,31 @@ This directory contains the main application entry point and command-line interf
     *   **Flags**:
         *   `--selector` (`-s`): (Repeatable) CSS selector of an element to screenshot.
         *   `--output-dir` (`-o`): Directory to save the screenshots (defaults to `./screenshots`).
+        *   `--to-clipboard`: If set, copies the data URL of the first successfully captured screenshot to the system clipboard.
     *   **Workflow**:
         1.  Collects selectors and validates inputs.
         2.  Makes an HTTP POST request to `http://localhost:9999/agents/{clientId}/screenshots?wait=true`. The request body is a JSON `{"selectors": ["selector1", ...]}`.
         3.  Receives a JSON response where the `response` field contains a map of selectors to base64 encoded PNG data URLs (or null/error for issues).
         4.  Decodes each data URL and saves it as a `.png` file in the output directory.
+        5.  If `--to-clipboard` is used and a screenshot is successful, the data URL of the first successful image is copied to the clipboard.
 
-6.  **`client_paste.go` (New)**:
+6.  **`paste.go` (formerly `client_paste.go`)**:
     *   Defines the `vibrant client paste` command.
-    *   **Purpose**: Simulates a paste event on a target DOM element, allowing content (especially images from files or data URLs) to be "pasted".
+    *   **Purpose**: Simulates a paste event on a target DOM element, allowing content (images or text data URLs) to be "pasted".
+    *   **Input Sources (priority order)**:
+        1.  `--file` (`-f`): Path to an image file to paste (CLI converts to data URL).
+        2.  `--data` (string): Base64 data URL of the content to paste.
+        3.  System clipboard: If `--from-clipboard` global flag is true, or if neither `--file` nor `--data` are provided (default fallback).
+            *   If clipboard contains image data, it's converted to a PNG data URL.
+            *   If clipboard contains text, it's used directly if it's a valid data URL.
     *   **Flags**:
         *   `--selector` (`-s`): (Required) CSS selector of the target element.
-        *   `--data` (string): Base64 data URL of the content to paste.
-        *   `--file` (`-f`): Path to an image file to paste (CLI converts to data URL).
-        *   One of `--data` or `--file` must be provided.
     *   **Workflow**:
-        1.  Validates inputs. If `--file` is used, reads the file and constructs a data URL.
-        2.  Makes an HTTP POST request to `http://localhost:9999/agents/{clientId}/paste?wait=true`.
-        3.  Request body is JSON: `{"selector": "css-selector", "dataUrl": "data:..."}`.
-        4.  Receives a JSON response indicating success or failure of dispatching the paste event.
+        1.  Determines the data URL from the highest priority input source.
+        2.  Validates inputs. If an image file is used, reads the file and constructs a data URL. If clipboard image data is used, it's converted to a PNG data URL.
+        3.  Makes an HTTP POST request to `http://localhost:9999/agents/{clientId}/paste?wait=true`.
+        4.  Request body is JSON: `{"selector": "css-selector", "dataUrl": "data:..."}`.
+        5.  Receives a JSON response indicating success or failure of dispatching the paste event.
 
 7.  **`calls.go`**:
     *   Defines `vibrant calls` and subcommands (`list`, `respond`).
