@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log" // Keep for os.Getenv as a fallback if rootCurrentClientId isn't populated by PersistentPreRun
 	"strconv"
+	"strings"
 	"text/template"
 
 	"github.com/panyam/vibrant/tools"
@@ -79,6 +80,7 @@ func callsCmdListCalls() *cobra.Command {
 		Short: "Lists the pending calls and their details.",
 		Run: func(cmd *cobra.Command, args []string) {
 			calllist := listCalls()
+			maxlines, _ := cmd.Flags().GetInt("maxlines")
 			if len(calllist) == 0 {
 				log.Printf("No pending calls")
 			} else {
@@ -90,7 +92,27 @@ func callsCmdListCalls() *cobra.Command {
 						payload := callinfo["payload"].(map[string]any)
 						i := 1
 						for k, v := range payload {
-							fmt.Printf("#### %d - %s = %v\n\n", i, k, v)
+							/*
+								var value string
+								if err := json.Unmarshal([]byte(v.(string)), &value); err != nil {
+									log.Println("Error unmarshalling value for param: ", k, err)
+									continue
+								}
+							*/
+							lines := strings.Split(v.(string), "\\n")
+							if len(lines) == 1 {
+								fmt.Printf("#### %d - %s = %v\n\n", i, k, v)
+							} else {
+								fmt.Printf("#### %d - %s\n", i, k)
+								for i, line := range lines {
+									if maxlines != 0 && i > maxlines {
+										fmt.Printf("	... %d more lines\n", len(lines)-maxlines)
+										break
+									}
+									fmt.Printf("	%s\n", line)
+								}
+								fmt.Println("")
+							}
 							i += 1
 						}
 					}
@@ -98,6 +120,7 @@ func callsCmdListCalls() *cobra.Command {
 			}
 		},
 	}
+	out.Flags().IntP("maxlines", "m", 5, "Maximum number of parameter lines to print.  0 for all")
 	return out
 }
 
