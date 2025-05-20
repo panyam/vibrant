@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.design/x/clipboard"
 )
 
 func clientScreenshotCmd() *cobra.Command {
@@ -22,10 +23,12 @@ func clientScreenshotCmd() *cobra.Command {
 		Use:   "screenshot",
 		Short: "Captures screenshots of specified elements on the page.",
 		Long: `Captures screenshots of one or more DOM elements identified by CSS selectors.
-The captured images are saved to a specified output directory.`,
+The captured images are saved to a specified output directory.
+Optionally, the first successful screenshot can be copied to the clipboard as a data URL.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			selectors, _ := cmd.Flags().GetStringArray("selector")
 			outputDir, _ := cmd.Flags().GetString("output-dir")
+			toClipboard, _ := cmd.Flags().GetBool("to-clipboard")
 
 			if len(selectors) == 0 {
 				log.Fatal("At least one selector must be provided with -s or --selector.")
@@ -39,7 +42,6 @@ The captured images are saved to a specified output directory.`,
 				outputDir = "." // Default to current directory
 			}
 
-			// Create output directory if it doesn't exist
 			if err := os.MkdirAll(outputDir, 0755); err != nil {
 				log.Fatalf("Failed to create output directory %s: %v", outputDir, err)
 			}
@@ -80,11 +82,7 @@ The captured images are saved to a specified output directory.`,
 				Response  map[string]*string `json:"response"` // Value can be string (dataURL) or null
 			}
 
-			// It's possible the entire "response" field itself is an error string from the server if JSON parsing failed there
-			// For now, we attempt to unmarshal into the expected structure.
-			// If Response is actually an error string from the top level (e.g. from server.go if it couldn't marshal imageData)
-			// then this unmarshal will fail. More robust error checking might be needed here.
-			var rawResponseOuter map[string]interface{}
+			var rawResponseOuter map[string]any
 			if err := json.Unmarshal(respBodyBytes, &rawResponseOuter); err != nil {
 				log.Fatalf("Error unmarshalling outer response JSON from /screenshot_elements: %v. Raw response: %s", err, string(respBodyBytes))
 			}
@@ -94,14 +92,11 @@ The captured images are saved to a specified output directory.`,
 				log.Fatalf("Missing 'response' field in /screenshot_elements JSON: %s", string(respBodyBytes))
 			}
 
-			// Now, marshal and unmarshal just the 'response' field content.
-			// This handles cases where 'response' is a JSON object (imageData) or a string (error from server).
 			responseBytes, err := json.Marshal(responseField)
 			if err != nil {
 				log.Fatalf("Error re-marshalling 'response' field: %v", err)
 			}
 
-			// Check if the inner response is an error structure like {"error": "message"}
 			var errorResp struct {
 				ErrorMsg string `json:"error"`
 			}
@@ -109,7 +104,6 @@ The captured images are saved to a specified output directory.`,
 				log.Fatalf("Received error from agent: %s", errorResp.ErrorMsg)
 			}
 
-			// Try to unmarshal into the expected imageData map
 			imageDataMap := make(map[string]*string)
 			if err := json.Unmarshal(responseBytes, &imageDataMap); err != nil {
 				log.Fatalf("Error unmarshalling imageData from response field: %v. Response field content: %s", err, string(responseBytes))
@@ -120,36 +114,42 @@ The captured images are saved to a specified output directory.`,
 
 			log.Printf("Received screenshot data for RequestID: %s", screenshotResponse.RequestID)
 			savedCount := 0
-			for selector, dataURL := range screenshotResponse.Response {
-				if dataURL == nil {
+			firstSuccessfulDataURL := ""
+
+			// Iterate through original selectors to maintain order for `firstSuccessfulDataURL`
+			for _, selector := range selectors {
+				dataURL, dataOk := screenshotResponse.Response[selector]
+				if !dataOk || dataURL == nil {
 					log.Printf("No screenshot captured for selector '%s' (element not found or error).", selector)
 					continue
 				}
 
-				// data:image/png;base64,iVBORw0KGgoAAAANS...
+				// Store the first successful data URL if needed for clipboard
+				if toClipboard && firstSuccessfulDataURL == "" {
+					firstSuccessfulDataURL = *dataURL
+				}
+
 				parts := strings.SplitN(*dataURL, ",", 2)
 				if len(parts) != 2 || !strings.HasPrefix(parts[0], "data:image/png;base64") {
-					log.Printf("Invalid data URL format for selector '%s'. Skipping.", selector)
+					log.Printf("Invalid data URL format for selector '%s'. Skipping saving.", selector)
 					continue
 				}
 
 				imgData, err := base64.StdEncoding.DecodeString(parts[1])
 				if err != nil {
-					log.Printf("Error decoding base64 image for selector '%s': %v. Skipping.", selector, err)
+					log.Printf("Error decoding base64 image for selector '%s': %v. Skipping saving.", selector, err)
 					continue
 				}
 
-				// Sanitize selector for filename
 				reg := regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
 				safeSelector := reg.ReplaceAllString(selector, "_")
-				if len(safeSelector) > 50 { // Truncate if too long
+				if len(safeSelector) > 50 {
 					safeSelector = safeSelector[:50]
 				}
 				if safeSelector == "" {
 					safeSelector = "element"
 				}
 
-				// Add a timestamp to ensure uniqueness if multiple screenshots of same selector (though not typical for one call)
 				timestamp := time.Now().Format("20060102150405")
 				filename := fmt.Sprintf("%s_%s.png", safeSelector, timestamp)
 				filePath := filepath.Join(outputDir, filename)
@@ -162,13 +162,28 @@ The captured images are saved to a specified output directory.`,
 					savedCount++
 				}
 			}
-			if savedCount == 0 {
+
+			if savedCount == 0 && !toClipboard {
 				log.Println("No screenshots were successfully saved.")
+			} else if toClipboard {
+				if firstSuccessfulDataURL != "" {
+					// Initialize clipboard (safe to call multiple times)
+					err := clipboard.Init()
+					if err != nil {
+						log.Printf("Warning: Failed to initialize clipboard: %v. Cannot copy screenshot.", err)
+					} else {
+						clipboard.Write(clipboard.FmtText, []byte(firstSuccessfulDataURL))
+						log.Println("First successful screenshot data URL copied to clipboard.")
+					}
+				} else {
+					log.Println("No screenshots were successful, nothing to copy to clipboard.")
+				}
 			}
 		},
 	}
 	out.Flags().StringArrayP("selector", "s", []string{}, "CSS selector of the element to screenshot (can be repeated).")
 	out.Flags().StringP("output-dir", "o", "./screenshots", "Directory to save the screenshots.")
+	out.Flags().Bool("to-clipboard", false, "Copy the first successful screenshot (as data URL) to the clipboard.")
 	return out
 }
 
