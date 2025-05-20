@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
@@ -91,7 +92,7 @@ func (t *Conn) HandleMessage(msgData any) error {
 		return fmt.Errorf("unexpected message format: %T", msgData)
 	}
 
-	log.Printf("Client %s: Received WebSocket Message Data: %v", t.ClientId, msgMap)
+	log.Printf("Client %s: Received WebSocket Message Data: %v", t.ClientId, maps.Keys(msgMap))
 
 	msgType, typeOk := msgMap["type"].(string)
 	requestId, idOk := msgMap["requestId"].(string)
@@ -341,7 +342,7 @@ func (h *Handler) WaitForRequest(req *Request) (response string, ok bool, timedo
 func (h *Handler) BroadcastToAgent(clientId string, payload map[string]any) {
 	h.withClientFanout(clientId, false, func(fanout *conc.FanOut[conc.Message[any]]) {
 		if fanout != nil {
-			log.Printf("Broadcasting to fanout for client %s (count %d): %v", clientId, fanout.Count(), payload)
+			log.Printf("Broadcasting to fanout for client %s (count %d): %v", clientId, fanout.Count(), maps.Keys(payload))
 			fanout.Send(conc.Message[any]{Value: payload})
 		} else {
 			log.Printf("Cannot broadcast: No fanout found for client %s (and ensure=false). Payload: %v", clientId, payload)

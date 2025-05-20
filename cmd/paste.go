@@ -191,7 +191,7 @@ If text data is on the clipboard, it will be used directly if it's a data URL.`,
 			}
 		},
 	}
-	out.Flags().StringP("selector", "s", "", "CSS selector of the target element (required)")
+	out.Flags().StringP("selector", "s", "ms-prompt-input-wrapper textarea", "CSS selector of the target element (required)")
 	out.Flags().String("data", "", "Base64 data URL of the content to paste (e.g., data:image/png;base64,...)")
 	out.Flags().StringP("file", "f", "", "Path to an image file to paste")
 	return out
