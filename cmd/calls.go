@@ -128,17 +128,21 @@ func callsCmdToolCallRespond() *cobra.Command {
 	out := &cobra.Command{
 		Use:   "respond CALLNUMBER",
 		Short: "Sets value in 'ms-function-call-chunk textarea' and optionally submits.",
-		Args:  cobra.ExactArgs(1),
+		// Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			callIndex, err := strconv.ParseInt(args[0], 10, 64)
-			if err != nil {
-				log.Println("invalid index: ", args[0])
-				return
+			callIndex := 0
+			if len(args) > 0 {
+				val, err := strconv.ParseInt(args[0], 10, 64)
+				if err != nil {
+					log.Println("invalid index: ", args[0])
+					return
+				}
+				callIndex = int(val)
 			}
 
 			// TODO - keep this in a cache somewhere instead of fetching each time
 			allcalls := listCalls()
-			if callIndex >= int64(len(allcalls)) || callIndex < 0 {
+			if callIndex >= len(allcalls) || callIndex < 0 {
 				log.Printf("call index must be between 0 and %d\n", len(allcalls)-1)
 				return
 			}

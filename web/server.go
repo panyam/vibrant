@@ -28,18 +28,17 @@ type Request struct {
 	recvChan   chan string // For the /eval?wait=true or /screenshots?wait=true handler, made buffered
 }
 
-func NewRequest(clientId string, payload any) *Request {
-	// Using a more specific prefix for screenshot requests for clarity in logs if needed
-	prefix := "eval"
-	if _, ok := payload.([]string); ok { // Check if payload is a slice of strings (selectors for screenshot)
-		prefix = "screenshot"
+func NewRequest(clientId string, payload any, reqType string) *Request {
+	prefix := reqType // Use reqType for prefix, e.g., "PASTE_DATA", "EVALUATE_SCRIPT"
+	if prefix == "" { // Fallback if reqType is empty, though it shouldn't be
+		prefix = "req"
 	}
 	return &Request{
 		Id:       fmt.Sprintf("%s-%d-%s", prefix, time.Now().UnixNano(), clientId),
 		SentAt:   time.Now(),
 		ClientId: clientId,
 		Payload:  payload,
-		Timeout:  30 * time.Second,
+		Timeout:  40 * time.Second,     // Increased timeout slightly for potentially slower paste/image operations
 		recvChan: make(chan string, 1), // Buffered channel of size 1
 	}
 }
@@ -127,11 +126,19 @@ func (t *Conn) HandleMessage(msgData any) error {
 			req.Response = msgMap["exceptionInfo"] // Overwrite Response with exceptionInfo
 		}
 		if req.err != nil {
-			responseToSend = fmt.Sprintf("Error: %v", req.err)
-		} else {
-			responseBytes, err := json.Marshal(req.Response)
+			// Error from client-side script execution, response is already the error string/object
+			responsePayload := map[string]any{"error": req.Response} // req.Response is exceptionInfo
+			responseBytes, err := json.Marshal(responsePayload)
 			if err != nil {
-				responseToSend = fmt.Sprintf("Error marshalling eval response result: %v", err)
+				responseToSend = fmt.Sprintf(`{"error": "Error marshalling eval error response: %v"}`, err)
+				marshalingError = fmt.Errorf("error marshalling eval error response: %w", err)
+			} else {
+				responseToSend = string(responseBytes)
+			}
+		} else {
+			responseBytes, err := json.Marshal(req.Response) // Should be JSON-compatible result from client
+			if err != nil {
+				responseToSend = fmt.Sprintf(`{"error": "Error marshalling eval response result: %v"}`, err)
 				marshalingError = fmt.Errorf("error marshalling eval response: %w", err)
 			} else {
 				responseToSend = string(responseBytes)
@@ -143,7 +150,6 @@ func (t *Conn) HandleMessage(msgData any) error {
 		req.Response = msgMap["imageData"] // This should be a map or the error string
 		if errMsg, errOK := msgMap["error"].(string); errOK && errMsg != "" {
 			req.err = fmt.Errorf("screenshot error from client: %s", errMsg)
-			// If there's a top-level error, Response might just be that error string
 			errorResponsePayload := map[string]string{"error": errMsg}
 			responseBytes, err := json.Marshal(errorResponsePayload)
 			if err != nil {
@@ -153,8 +159,7 @@ func (t *Conn) HandleMessage(msgData any) error {
 				responseToSend = string(responseBytes)
 			}
 		} else {
-			// If no top-level error, marshal the imageData map
-			responseBytes, err := json.Marshal(req.Response)
+			responseBytes, err := json.Marshal(req.Response) // Should be the imageData map
 			if err != nil {
 				responseToSend = fmt.Sprintf(`{"error": "Error marshalling screenshot imageData: %v"}`, err)
 				marshalingError = fmt.Errorf("error marshalling screenshot imageData: %w", err)
@@ -164,6 +169,32 @@ func (t *Conn) HandleMessage(msgData any) error {
 		}
 		log.Printf("Client %s: Processed ELEMENTS_SCREENSHOT_RESULT for %s.", t.ClientId, requestId)
 
+	case "PASTE_RESULT":
+		// Expecting {success: true/false, message: "...", error: "..."} from panel.js
+		pasteSuccess, _ := msgMap["success"].(bool)
+		pasteMessage, _ := msgMap["message"].(string)
+		pasteError, _ := msgMap["error"].(string)
+
+		respPayload := map[string]any{
+			"success": pasteSuccess,
+			"message": pasteMessage,
+			"error":   pasteError,
+		}
+		req.Response = respPayload // Store the structured response
+
+		if !pasteSuccess {
+			req.err = fmt.Errorf("paste operation failed on client: %s", pasteError)
+		}
+
+		responseBytes, err := json.Marshal(respPayload)
+		if err != nil {
+			responseToSend = fmt.Sprintf(`{"error": "Error marshalling paste result: %v"}`, err)
+			marshalingError = fmt.Errorf("error marshalling paste result: %w", err)
+		} else {
+			responseToSend = string(responseBytes)
+		}
+		log.Printf("Client %s: Processed PASTE_RESULT for %s. Success: %v", t.ClientId, requestId, pasteSuccess)
+
 	default:
 		log.Printf("Client %s: Received unhandled message type '%s' from client for requestId %s.", t.ClientId, msgType, requestId)
 		return nil // Don't mark as finished or send to channel if unhandled
@@ -172,20 +203,17 @@ func (t *Conn) HandleMessage(msgData any) error {
 	req.ResponseAt = time.Now()
 	if marshalingError != nil && req.err == nil { // If marshaling failed, set it as the primary error
 		req.err = marshalingError
-		if responseToSend == "" { // Ensure responseToSend has error info
-			responseToSend = fmt.Sprintf("Error: %v", req.err)
-		}
+		// Ensure responseToSend has error info in JSON format
+		errorResp := map[string]string{"error": fmt.Sprintf("%v", req.err)}
+		bytes, _ := json.Marshal(errorResp)
+		responseToSend = string(bytes)
 	}
 	req.finished = true
 
-	// Send to channel if it's still open (it should be for a waiting request)
-	// A select with a default might be safer if the channel could somehow be closed by a timeout race,
-	// but `close(req.recvChan)` happens after this send or on timeout.
 	select {
 	case req.recvChan <- responseToSend:
 		log.Printf("Client %s: Sent response for requestId %s to recvChan.", t.ClientId, requestId)
 	default:
-		// This case might occur if the channel was closed due to a timeout just before this send attempt.
 		log.Printf("Client %s: recvChan for requestId %s was already closed. Response not sent.", t.ClientId, requestId)
 	}
 
@@ -237,8 +265,20 @@ func (c *Conn) OnStart(conn *websocket.Conn) error {
 
 	go func() {
 		time.Sleep(1 * time.Second)
-		welcomeScript := "console.log('[AgentWelcome] Go backend says hello! Location: ' + window.location.href + '. Title: ' + document.title + '. Timestamp: ' + new Date().toLocaleTimeString()); ({ pageTitle: document.title, userAgent: navigator.userAgent, connectionTime: new Date().toISOString() });"
-		req := NewRequest(c.ClientId, welcomeScript) // This will create a new request, okay for welcome.
+		welcomeScript := `
+				console.log('[AgentWelcome] Go backend says hello!')
+				console.log('Location: ' + window.location.href + '. Title: ' + document.title + '. Timestamp: ' + new Date().toLocaleTimeString())
+				let vibStyles = document.querySelector("style[vibrant]")
+				if (!vibStyles) {
+					const head = document.querySelector("head")
+					vibStyles = document.createElement("style")
+					vibStyles.setAttribute("vibrant", "true")
+					head.appendChild(vibStyles)
+				}
+				setTimeout(() => { vibStyles.innerText = "code { max-height: 150px; } ms-text-chunk { max-height: 200px; overflow: scroll; }" }, 10)
+				({ pageTitle: document.title, userAgent: navigator.userAgent, connectionTime: new Date().toISOString() })
+				`
+		req := NewRequest(c.ClientId, welcomeScript, "EVALUATE_SCRIPT")
 		c.handler.SubmitRequest("EVALUATE_SCRIPT", req)
 		log.Printf("Client %s: Sent welcome EVALUATE_SCRIPT.", c.ClientId)
 	}()
@@ -249,35 +289,47 @@ func (h *Handler) SubmitRequest(reqType string, req *Request) {
 	h.reqMutex.Lock()
 	h.pendingRequests[req.Id] = req
 	h.reqMutex.Unlock()
-	log.Printf("Stored pending eval request %s for client %s. Total pending: %d", req.Id, req.ClientId, len(h.pendingRequests))
+	log.Printf("Stored pending request %s (%s) for client %s. Total pending: %d", req.Id, reqType, req.ClientId, len(h.pendingRequests))
+
+	// The payload sent to the client differs based on reqType.
+	// For EVALUATE_SCRIPT, payload is the script string.
+	// For CAPTURE_ELEMENTS_SCREENSHOT, payload is []string of selectors.
+	// For PASTE_DATA, payload is a map[string]string like {"selector": "...", "dataUrl": "..."}
+	var clientPayload any
+	if reqType == "PASTE_DATA" {
+		// req.Payload is already the map[string]string for PASTE_DATA (or struct)
+		clientPayload = req.Payload
+	} else {
+		clientPayload = req.Payload // For EVAL and SCREENSHOT, Payload is the direct script/selectors
+	}
 
 	messagePayload := map[string]any{
 		"type":      reqType,
 		"requestId": req.Id,
-		"payload":   req.Payload,
+		"payload":   clientPayload,
 	}
 	h.BroadcastToAgent(req.ClientId, messagePayload)
 }
 
 func (h *Handler) WaitForRequest(req *Request) (response string, ok bool, timedout bool) {
 	clientId := req.ClientId
-	log.Printf("Client %s /eval: Waiting for response on recvChan for ReqID: %s", clientId, req.Id)
+	log.Printf("Client %s: Waiting for response on recvChan for ReqID: %s", clientId, req.Id)
 	select {
-	case responseMsg, ok := <-req.recvChan:
-		if ok {
-			log.Printf("Client %s /eval: Received response for ReqID %s: %s", clientId, req.Id, responseMsg)
+	case responseMsg, chanOk := <-req.recvChan:
+		if chanOk {
+			log.Printf("Client %s: Received response for ReqID %s: %s", clientId, req.Id, responseMsg)
 		} else {
-			log.Printf("Client %s /eval: recvChan closed without a message for ReqID %s.", clientId, req.Id)
+			log.Printf("Client %s: recvChan closed without a message for ReqID %s.", clientId, req.Id)
 		}
-		return responseMsg, ok, false
-	case <-time.After(req.Timeout): // Standard timeout for eval
-		log.Printf("Client %s /eval: Timed out waiting for response for ReqID %s", clientId, req.Id)
+		return responseMsg, chanOk, false
+	case <-time.After(req.Timeout):
+		log.Printf("Client %s: Timed out waiting for response for ReqID %s", clientId, req.Id)
 		h.reqMutex.Lock()
 		if pendingReq, exists := h.pendingRequests[req.Id]; exists && !pendingReq.finished {
-			pendingReq.finished = true // Mark as finished to prevent further processing
-			close(pendingReq.recvChan) // Close chan to unblock any potential race
+			pendingReq.finished = true
+			close(pendingReq.recvChan)
 			delete(h.pendingRequests, req.Id)
-			log.Printf("Client %s /eval: Cleaned up timed-out pending request %s", clientId, req.Id)
+			log.Printf("Client %s: Cleaned up timed-out pending request %s", clientId, req.Id)
 		}
 		h.reqMutex.Unlock()
 		return "", false, true
@@ -339,31 +391,22 @@ func NewServeMux() *http.ServeMux {
 			return
 		}
 
-		req := NewRequest(clientId, script)
+		req := NewRequest(clientId, script, "EVALUATE_SCRIPT")
 		handler.SubmitRequest("EVALUATE_SCRIPT", req)
 
 		w.Header().Set("Content-Type", "application/json")
 		if wait {
 			response, ok, timedout := handler.WaitForRequest(req)
 			if timedout {
-				http.Error(w, "Timeout waiting for script evaluation response", http.StatusGatewayTimeout)
+				jsonResp, _ := json.Marshal(map[string]any{"requestId": req.Id, "response": map[string]string{"error": "Timeout waiting for script evaluation response"}})
+				w.WriteHeader(http.StatusGatewayTimeout)
+				w.Write(jsonResp)
 			} else if ok {
-				w.Header().Set("Content-Type", "application/json")
-				// response is expected to be a JSON string of the result or an error string
-				// If it's an error string from our side, it might not be valid JSON, so wrap it.
-				// If it's from the client, it should be marshal-able JSON or a simple string.
-				// For simplicity, we assume if it starts with "Error:", it's not JSON from client.
-				if !json.Valid([]byte(response)) {
-					// Attempt to re-marshal if it's likely an error string we created
-					// This part could be more robust based on how errors are formatted
-					errorPayload := map[string]any{"error": response}
-					jsonError, _ := json.Marshal(errorPayload)
-					fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, string(jsonError))
-				} else {
-					fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, response)
-				}
+				fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, response)
 			} else {
-				http.Error(w, "Response channel closed or request processed/timed out.", http.StatusInternalServerError)
+				jsonResp, _ := json.Marshal(map[string]any{"requestId": req.Id, "response": map[string]string{"error": "Response channel closed or request processed/timed out."}})
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write(jsonResp)
 			}
 		} else {
 			json.NewEncoder(w).Encode(map[string]string{
@@ -395,22 +438,84 @@ func NewServeMux() *http.ServeMux {
 			return
 		}
 
-		req := NewRequest(clientId, requestBody.Selectors)
+		req := NewRequest(clientId, requestBody.Selectors, "CAPTURE_ELEMENTS_SCREENSHOT")
 		handler.SubmitRequest("CAPTURE_ELEMENTS_SCREENSHOT", req)
 
+		w.Header().Set("Content-Type", "application/json")
 		if wait {
 			response, ok, timedout := handler.WaitForRequest(req)
 			if timedout {
-				http.Error(w, "Timeout waiting for script evaluation response", http.StatusGatewayTimeout)
+				jsonResp, _ := json.Marshal(map[string]any{"requestId": req.Id, "response": map[string]string{"error": "Timeout waiting for screenshot response"}})
+				w.WriteHeader(http.StatusGatewayTimeout)
+				w.Write(jsonResp)
 			} else if ok {
-				// responseMsg is expected to be a JSON string of the imageData map or an error structure
 				fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, response)
 			} else {
-				http.Error(w, "Response channel closed or request processed/timed out.", http.StatusInternalServerError)
+				jsonResp, _ := json.Marshal(map[string]any{"requestId": req.Id, "response": map[string]string{"error": "Response channel closed or request processed/timed out for screenshots."}})
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write(jsonResp)
 			}
 		} else {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "CAPTURE_ELEMENTS_SCREENSHOT command sent", "requestId": req.Id})
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":    "CAPTURE_ELEMENTS_SCREENSHOT command sent",
+				"requestId": req.Id,
+			})
+		}
+	})
+
+	mux.HandleFunc("POST /agents/{clientId}/paste", func(w http.ResponseWriter, r *http.Request) {
+		clientId := r.PathValue("clientId")
+		if clientId == "" {
+			http.Error(w, "Client ID is missing in path", http.StatusBadRequest)
+			return
+		}
+		wait := r.URL.Query().Get("wait") == "true"
+
+		var requestPayload struct {
+			Selector string `json:"selector"`
+			DataURL  string `json:"dataUrl"` // Renamed from DataUrl to follow camelCase convention typically used in JSON
+		}
+		if err := json.NewDecoder(r.Body).Decode(&requestPayload); err != nil {
+			http.Error(w, "Invalid JSON body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
+
+		if requestPayload.Selector == "" || requestPayload.DataURL == "" {
+			http.Error(w, "'selector' and 'dataUrl' fields are required in JSON body", http.StatusBadRequest)
+			return
+		}
+
+		// The payload for the SubmitRequest for PASTE_DATA will be the requestPayload struct itself (or a map version)
+		// This is what gets sent over WebSocket to the client extension.
+		clientSidePayload := map[string]string{
+			"selector": requestPayload.Selector,
+			"dataUrl":  requestPayload.DataURL, // Make sure this matches what panel.js expects
+		}
+
+		req := NewRequest(clientId, clientSidePayload, "PASTE_DATA")
+		handler.SubmitRequest("PASTE_DATA", req)
+
+		w.Header().Set("Content-Type", "application/json")
+		if wait {
+			response, ok, timedout := handler.WaitForRequest(req)
+			if timedout {
+				jsonResp, _ := json.Marshal(map[string]any{"requestId": req.Id, "response": map[string]string{"error": "Timeout waiting for paste response"}})
+				w.WriteHeader(http.StatusGatewayTimeout)
+				w.Write(jsonResp)
+			} else if ok {
+				// response is expected to be JSON: {"success": bool, "message": string, "error": string}
+				fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, response)
+			} else {
+				jsonResp, _ := json.Marshal(map[string]any{"requestId": req.Id, "response": map[string]string{"error": "Response channel closed or request processed/timed out for paste."}})
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write(jsonResp)
+			}
+		} else {
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":    "PASTE_DATA command sent",
+				"requestId": req.Id,
+			})
 		}
 	})
 
@@ -421,7 +526,7 @@ func NewServeMux() *http.ServeMux {
 			http.Error(w, "Missing 'agent' or 'script' query parameter", http.StatusBadRequest)
 			return
 		}
-		req := NewRequest(agentName, script)
+		req := NewRequest(agentName, script, "EVALUATE_SCRIPT")
 		handler.SubmitRequest("EVALUATE_SCRIPT", req)
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Sent EVALUATE_SCRIPT to agent %s (ReqID: %s). Script: '%s'", agentName, req.Id, script)
@@ -430,7 +535,8 @@ func NewServeMux() *http.ServeMux {
 	log.Println("WebSocket ServeMux configured.")
 	log.Println("GET  /agents/{clientId}/subscribe 		- WebSocket connections")
 	log.Println("POST /agents/{clientId}/eval        	- Evaluate script (add ?wait=true to wait for response)")
-	log.Println("POST /agents/{clientId}/screenshots	- Capture screenshots of elements (add ?wait=true to wait for response)")
+	log.Println("POST /agents/{clientId}/screenshots		- Capture screenshots of elements (add ?wait=true to wait for response)")
+	log.Println("POST /agents/{clientId}/paste			- Paste data (e.g. image) into an element (add ?wait=true to wait for response)")
 	log.Println("GET  /test_eval?agent=<name>&script=<javascript> - Test script evaluation")
 	return mux
 }

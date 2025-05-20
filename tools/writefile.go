@@ -1,7 +1,9 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 )
 
@@ -25,9 +27,21 @@ func (r *WriteFile) Parameters() []*Parameter {
 			Type:        "string",
 		},
 		{
-			Name:        "contents",
-			Description: "Text contents to set in the file that is writed (or overwritten)",
+			Name:        "encoding",
+			Description: "This should be one of 'plain', 'base64' or 'json' to specify the encoding",
 			Type:        "string",
+		},
+		{
+			Name: "contents",
+			Description: `
+				The contents of file to be written to. 
+				Depending on the encoding the following decoding is performed before contents are written to the file:
+
+				"plain": 	File contents will be text and written verbatim.
+				"base64":	File contents will be first base64 decoded and then written to.  Use this for saving binary content like images and media.
+				"json":		JSON encoded string.   The JSON decoding of this string must result in a raw string.
+			`,
+			Type: "string",
 		},
 	}
 }
@@ -48,7 +62,26 @@ func (r *WriteFile) Run(args map[string]any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	encoding := "json"
+	if args["encoding"] != nil {
+		encoding = args["encoding"].(string)
+	}
 	contents := args["contents"].(string)
+
+	if encoding == "plain" {
+		// do nothign
+	} else if encoding == "base64" {
+		// TODO
+	} else {
+		// json encoding
+		var out string
+		if err := json.Unmarshal([]byte(contents), &out); err != nil {
+			log.Fatal("Cannot unmarshall json: ", err)
+		} else {
+			log.Println("Here.....")
+			contents = out
+		}
+	}
 
 	// TODO - replace with stat
 	_, err = os.ReadFile(fullpath)

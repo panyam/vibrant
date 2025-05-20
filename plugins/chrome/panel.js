@@ -4,16 +4,16 @@ const disconnectButton = document.getElementById('disconnectButton');
 const statusDiv = document.getElementById('status');
 
 let panelPort = null;
-let currentConnectionName = null; 
+let currentConnectionName = null;
 
 let reconnectAttempts = 0;
 let reconnectTimeoutId = null;
-let userInitiatedDisconnect = false; 
-const INITIAL_RECONNECT_DELAY = 1000; 
-const MAX_RECONNECT_DELAY = 10000;    
+let userInitiatedDisconnect = false;
+const INITIAL_RECONNECT_DELAY = 1000;
+const MAX_RECONNECT_DELAY = 10000;
 
 // Store pending screenshot callbacks by requestId
-const pendingScreenshotCallbacks = {}; 
+const pendingScreenshotCallbacks = {};
 
 function sendResponseToBackend(payload) {
     if (panelPort) {
@@ -27,15 +27,14 @@ function sendResponseToBackend(payload) {
 }
 
 function handleEvaluateScriptRequest(requestDetails) {
-    const scriptToEvaluate = requestDetails.payload
+    const scriptToEvaluate = requestDetails.payload;
     if (!requestDetails || !requestDetails.requestId || typeof scriptToEvaluate !== 'string') {
         console.error("Panel: Invalid EVALUATE_SCRIPT request", requestDetails);
         sendResponseToBackend({
             type: "EVALUATION_RESULT",
             requestId: requestDetails.requestId || "unknown",
-            error: "Invalid EVALUATE_SCRIPT request structure from backend",
             isException: true,
-            exceptionInfo: "Invalid request structure."
+            exceptionInfo: "Invalid EVALUATE_SCRIPT request structure from backend"
         });
         return;
     }
@@ -64,8 +63,8 @@ function handleEvaluateScriptRequest(requestDetails) {
 }
 
 async function handleCaptureElementsScreenshotRequest(requestDetails) {
-    const requestId = requestDetails.requestId
-    const selectors = requestDetails.payload
+    const requestId = requestDetails.requestId;
+    const selectors = requestDetails.payload;
     if (!requestId || !Array.isArray(selectors) || selectors.length === 0) {
         console.error("Panel: Invalid CAPTURE_ELEMENTS_SCREENSHOT request", requestDetails);
         sendResponseToBackend({
@@ -117,7 +116,7 @@ async function handleCaptureElementsScreenshotRequest(requestDetails) {
 
         const currentTabId = chrome.devtools.inspectedWindow.tabId;
         console.log(`Panel: Requesting tab capture from background for tab ID: ${currentTabId}, requestId: ${requestId}`);
-        
+
         // Create a promise that will be resolved when the background script sends back the capture
         const capturePromise = new Promise((resolve, reject) => {
             pendingScreenshotCallbacks[requestId] = { resolve, reject };
@@ -145,7 +144,7 @@ async function handleCaptureElementsScreenshotRequest(requestDetails) {
 
         const mainImage = new Image();
         const imageDataResults = {};
-        
+
         await new Promise((resolveImageLoad, rejectImageLoad) => {
             mainImage.onload = () => {
                 const canvas = document.createElement('canvas');
@@ -156,10 +155,10 @@ async function handleCaptureElementsScreenshotRequest(requestDetails) {
                         const dpr = data.devicePixelRatio;
                         canvas.width = Math.round(data.width * dpr);
                         canvas.height = Math.round(data.height * dpr);
-                        ctx.drawImage(mainImage, 
-                            Math.round(data.left * dpr), Math.round(data.top * dpr), 
+                        ctx.drawImage(mainImage,
+                            Math.round(data.left * dpr), Math.round(data.top * dpr),
                             Math.round(data.width * dpr), Math.round(data.height * dpr),
-                            0, 0, 
+                            0, 0,
                             Math.round(data.width * dpr), Math.round(data.height * dpr));
                         imageDataResults[selector] = canvas.toDataURL("image/png");
                     } else {
@@ -174,7 +173,7 @@ async function handleCaptureElementsScreenshotRequest(requestDetails) {
             };
             mainImage.src = dataUrl;
         });
-        
+
         console.log(`Panel: Finished cropping for ${requestId}. Sending results.`);
         sendResponseToBackend({
             type: "ELEMENTS_SCREENSHOT_RESULT",
@@ -198,6 +197,94 @@ async function handleCaptureElementsScreenshotRequest(requestDetails) {
         }
     }
 }
+
+async function handlePasteDataRequest(requestDetails) {
+    const { requestId, payload } = requestDetails;
+    // payload is expected to be { selector: "...", dataUrl: "..." }
+    const { selector, dataUrl } = payload;
+
+    if (!requestId || !selector || !dataUrl) {
+        console.error("Panel: Invalid PASTE_DATA request", requestDetails);
+        sendResponseToBackend({
+            type: "PASTE_RESULT",
+            requestId: requestId || "unknown_paste_request",
+            success: false,
+            message: null,
+            error: "Invalid PASTE_DATA request structure (missing requestId, selector, or dataUrl)."
+        });
+        return;
+    }
+
+    console.log(`Panel: Starting paste data for requestId: ${requestId}, selector: ${selector}`);
+
+    // Construct the script to be evaluated in the inspected window
+    // The selector and dataUrl are passed as arguments to an IIFE.
+    // Single quotes within selector and dataUrl are escaped for the string literal arguments of the IIFE.
+    const scriptToExecute = `
+        (async (selectorArg, dataUrlArg) => {
+            const element = document.querySelector(selectorArg);
+            if (!element) {
+                return { success: false, error: \`Element "\${selectorArg}" not found.\` };
+            }
+            element.focus();
+
+            try {
+                const fetchResponse = await fetch(dataUrlArg);
+                if (!fetchResponse.ok) {
+                    throw new Error(\`Failed to fetch data URL (status: \${fetchResponse.status}) starting with: \${dataUrlArg.substring(0,100)}...\`);
+                }
+                const blob = await fetchResponse.blob();
+
+                const dataTransfer = new DataTransfer();
+                const fileExtension = blob.type.split('/')[1] || 'png';
+                const fileName = "pasted_image." + fileExtension;
+                dataTransfer.items.add(new File([blob], fileName, { type: blob.type }));
+
+                const pasteEvent = new ClipboardEvent('paste', {
+                    clipboardData: dataTransfer,
+                    bubbles: true,
+                    cancelable: true
+                });
+                element.dispatchEvent(pasteEvent);
+
+                return { success: true, message: \`Paste event dispatched to "\${selectorArg}".\` };
+
+            } catch (e) {
+                console.error(\`[Vibrant Agent] Error during paste simulation for selector "\${selectorArg}":\`, e);
+                return { success: false, error: e.message || String(e) };
+            }
+        })(\`${selector.replace(/`/g, '\\\\`')}\`, \`${dataUrl.replace(/`/g, '\\\\`')}\`);
+    `; // Using template literals for args, escaping backticks in them.
+
+    chrome.devtools.inspectedWindow.eval(
+        scriptToExecute,
+        (result, isExceptionInfo) => {
+            let responsePayload;
+            if (isExceptionInfo) {
+                const errorMsg = (isExceptionInfo && (isExceptionInfo.description || isExceptionInfo.value)) || JSON.stringify(isExceptionInfo);
+                console.error(`Panel: Exception during paste script execution (ReqID: ${requestId}):`, errorMsg);
+                responsePayload = {
+                    type: "PASTE_RESULT",
+                    requestId: requestId,
+                    success: false,
+                    message: null,
+                    error: `Script evaluation exception: ${errorMsg}`
+                };
+            } else {
+                // result should be {success: bool, message?: string, error?: string}
+                responsePayload = {
+                    type: "PASTE_RESULT",
+                    requestId: requestId,
+                    success: result.success,
+                    message: result.message || null,
+                    error: result.error || null
+                };
+            }
+            sendResponseToBackend(responsePayload);
+        }
+    );
+}
+
 
 function scheduleReconnect() {
     if (userInitiatedDisconnect) return;
@@ -240,6 +327,8 @@ function connect(isUserClick = true) {
                     handleEvaluateScriptRequest(message.data);
                 } else if (message.data.type === 'CAPTURE_ELEMENTS_SCREENSHOT') {
                     handleCaptureElementsScreenshotRequest(message.data);
+                } else if (message.data.type === 'PASTE_DATA') { // Added this case
+                    handlePasteDataRequest(message.data);      // Added this call
                 } else {
                     console.warn("Panel: Received unhandled WebSocket message data type from server:", message.data.type, message.data);
                 }
@@ -247,7 +336,7 @@ function connect(isUserClick = true) {
                 console.warn("Panel: Received empty data in WEBSOCKET_MESSAGE from background.");
             }
           } else if (message.type === "WEBSOCKET_STATUS") {
-            if (statusDiv) statusDiv.textContent = `Status: ${message.status}`; 
+            if (statusDiv) statusDiv.textContent = `Status: ${message.status}`;
             if (message.status === "Connected") {
               if (connectButton) connectButton.style.display = 'none';
               if (disconnectButton) disconnectButton.style.display = 'inline-block';
@@ -255,14 +344,14 @@ function connect(isUserClick = true) {
               userInitiatedDisconnect = false;
               reconnectAttempts = 0;
               clearReconnectTimer();
-            } else { 
+            } else {
               if (connectButton) connectButton.style.display = 'inline-block';
               if (disconnectButton) disconnectButton.style.display = 'none';
               if (connectionNameInput) connectionNameInput.disabled = false;
               if (!userInitiatedDisconnect && (message.status === "Disconnected" || message.status.startsWith("Error:"))) {
                  scheduleReconnect();
               } else if (userInitiatedDisconnect) {
-                 currentConnectionName = null; 
+                 currentConnectionName = null;
               }
             }
           } else if (message.type === "TAB_CAPTURE_COMPLETE") {
@@ -285,8 +374,7 @@ function connect(isUserClick = true) {
         panelPort.onDisconnect.addListener(function() {
           console.warn("Panel: Port to background script disconnected.");
           if (statusDiv) statusDiv.textContent = "Status: Disconnected from background script.";
-          panelPort = null; 
-          // Reject any pending screenshot callbacks on disconnect
+          panelPort = null;
           for (const id in pendingScreenshotCallbacks) {
             pendingScreenshotCallbacks[id].reject("Panel port disconnected during screenshot process.");
             delete pendingScreenshotCallbacks[id];
@@ -298,13 +386,13 @@ function connect(isUserClick = true) {
     } catch (e) {
         console.error("Panel: Failed to connect port to background script:", e);
         if (statusDiv) statusDiv.textContent = "Status: Error connecting to background.";
-        return; 
+        return;
     }
   }
 
   const nameToConnect = connectionNameInput ? connectionNameInput.value.trim() : "";
   if (nameToConnect) {
-    currentConnectionName = nameToConnect; 
+    currentConnectionName = nameToConnect;
     console.log(`Panel: Attempting to connect WebSocket for name: ${currentConnectionName}`);
     if (panelPort) {
         panelPort.postMessage({
@@ -325,15 +413,15 @@ function connect(isUserClick = true) {
 }
 
 function disconnect() {
-  userInitiatedDisconnect = true; 
-  clearReconnectTimer(); 
+  userInitiatedDisconnect = true;
+  clearReconnectTimer();
   reconnectAttempts = 0;
   if (panelPort && currentConnectionName) {
     console.log(`Panel: User initiated disconnect for ${currentConnectionName}`);
     panelPort.postMessage({
       type: "DISCONNECT_WEBSOCKET",
       tabId: chrome.devtools.inspectedWindow.tabId,
-      connectionName: currentConnectionName 
+      connectionName: currentConnectionName
     });
   } else {
     if (statusDiv) statusDiv.textContent = "Status: Not Connected";
@@ -353,7 +441,7 @@ if (savedName && connectionNameInput) {
     connectionNameInput.value = savedName;
 }
 if (connectionNameInput) {
-    connectionNameInput.addEventListener('input', (event) => { 
+    connectionNameInput.addEventListener('input', (event) => {
         if (event.target.value) {
             sessionStorage.setItem(storageKey, event.target.value);
         } else {
