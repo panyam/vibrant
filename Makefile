@@ -30,14 +30,14 @@ resymlink:
 prompt:
 	source ~/personal/.shhelpers && files_for_llm `find . | grep -v apiclient | grep -v pnpm | grep -v llmprompts | grep -v node.mod | grep -v .git | grep -v gen | grep -v web.static | grep -v output | grep -v content | grep -v dist | grep -v ./static/css/tailwind.css | grep -v go.sum | grep -v pnpm | grep -v "\.png" | grep -v "\.jpeg" | grep -v "\.jpg" | grep -v LICENSE`
 
-respond_to_createfile:
-	$(vib) tools run -c create_file
+respond_to_writefile:
+	$(vib) tools run -c write_file
 
 respond_to_readfile:
 	vib tools run -c read_file
 
-tool_createfile:
-	vib tools run create_file
+tool_writefile:
+	vib tools run write_file
 
 tool_readfile:
 	vib tools run read_file
