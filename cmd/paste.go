@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image/png" // Added for encoding clipboard image to PNG
 	"io"
 	"log"
 	"mime"
@@ -15,28 +16,25 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.design/x/clipboard"
 )
 
 func clientPasteCmd() *cobra.Command {
 	out := &cobra.Command{
 		Use:   "paste",
-		Short: "Pastes data (e.g., image from a data URL or file) into a specified element.",
+		Short: "Pastes data (e.g., image from file, data URL, or clipboard) into a specified element.",
 		Long: `Simulates a paste event on a target DOM element.
-You can provide the content to paste either as a base64 data URL via --data
-or by specifying an image file path via --file.`,
+You can provide the content to paste as a base64 data URL via --data,
+by specifying an image file path via --file, or from the system clipboard.
+If image data is on the clipboard, it will be converted to a PNG data URL.
+If text data is on the clipboard, it will be used directly if it's a data URL.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			selector, _ := cmd.Flags().GetString("selector")
-			dataURL, _ := cmd.Flags().GetString("data")
-			filePath, _ := cmd.Flags().GetString("file")
+			dataURLFlag, _ := cmd.Flags().GetString("data")
+			filePathFlag, _ := cmd.Flags().GetString("file")
 
 			if selector == "" {
 				log.Fatal("Error: --selector flag is required.")
-			}
-			if dataURL == "" && filePath == "" {
-				log.Fatal("Error: either --data or --file flag must be provided.")
-			}
-			if dataURL != "" && filePath != "" {
-				log.Fatal("Error: --data and --file flags are mutually exclusive.")
 			}
 
 			if rootCurrentClientId == "" {
@@ -44,36 +42,85 @@ or by specifying an image file path via --file.`,
 			}
 
 			var finalDataURL string
-			if filePath != "" {
-				fileBytes, err := os.ReadFile(filePath)
-				if err != nil {
-					log.Fatalf("Error reading file %s: %v", filePath, err)
+			var dataSource string // To indicate where the data came from
+
+			if filePathFlag != "" {
+				if dataURLFlag != "" {
+					log.Fatal("Error: --data and --file flags are mutually exclusive.")
 				}
-				mimeType := mime.TypeByExtension(filepath.Ext(filePath))
+				dataSource = "file " + filePathFlag
+				fileBytes, err := os.ReadFile(filePathFlag)
+				if err != nil {
+					log.Fatalf("Error reading file %s: %v", filePathFlag, err)
+				}
+				mimeType := mime.TypeByExtension(filepath.Ext(filePathFlag))
 				if mimeType == "" {
-					// Default to application/octet-stream or attempt to detect, but for images, common types are better.
-					// For this tool's primary use case (images), let's assume common image types or require dataURL for others.
-					// A more robust solution might use http.DetectContentType, but that needs the first 512 bytes.
-					// For simplicity here, we'll encourage common image extensions or direct dataURL.
-					log.Printf("Warning: could not determine MIME type for %s. Defaulting to image/png if it looks like one, else application/octet-stream.", filePath)
-					if strings.HasSuffix(strings.ToLower(filePath), ".png") {
+					log.Printf("Warning: could not determine MIME type for %s. Attempting to infer.", filePathFlag)
+					if strings.HasSuffix(strings.ToLower(filePathFlag), ".png") {
 						mimeType = "image/png"
-					} else if strings.HasSuffix(strings.ToLower(filePath), ".jpg") || strings.HasSuffix(strings.ToLower(filePath), ".jpeg") {
+					} else if strings.HasSuffix(strings.ToLower(filePathFlag), ".jpg") || strings.HasSuffix(strings.ToLower(filePathFlag), ".jpeg") {
 						mimeType = "image/jpeg"
-					} else if strings.HasSuffix(strings.ToLower(filePath), ".gif") {
+					} else if strings.HasSuffix(strings.ToLower(filePathFlag), ".gif") {
 						mimeType = "image/gif"
-					} else if strings.HasSuffix(strings.ToLower(filePath), ".webp") {
+					} else if strings.HasSuffix(strings.ToLower(filePathFlag), ".webp") {
 						mimeType = "image/webp"
 					} else {
-						mimeType = "application/octet-stream" // Fallback
+						mimeType = "application/octet-stream"
 					}
 				}
 				finalDataURL = fmt.Sprintf("data:%s;base64,%s", mimeType, base64.StdEncoding.EncodeToString(fileBytes))
-			} else {
-				finalDataURL = dataURL
-				if !strings.HasPrefix(finalDataURL, "data:") {
-					log.Fatal("Error: --data value must be a valid data URL (e.g., data:image/png;base64,...).")
+			} else if dataURLFlag != "" {
+				dataSource = "data flag"
+				finalDataURL = dataURLFlag
+			} else if rootFromClipboard || (filePathFlag == "" && dataURLFlag == "") { // Use clipboard if explicitly requested or as default
+				dataSource = "clipboard"
+				// Try reading image data first
+				imgBytes := clipboard.Read(clipboard.FmtImage)
+				if len(imgBytes) > 0 {
+					// Assume PNG for now. More sophisticated type detection might be needed for other formats.
+					// For simplicity, we convert to PNG data URL directly.
+					// Note: clipboard.Read(clipboard.FmtImage) often gives raw RGBA or similar, needs encoding.
+					// The `golang.design/x/clipboard` library's FmtImage often gives raw pixel data.
+					// For it to be useful as a data URL, it needs to be in a standard image format (like PNG).
+					// Let's try to decode it as an image and re-encode as PNG.
+					img, err := png.Decode(bytes.NewReader(imgBytes)) // image.Decode can identify format
+					if err == nil {
+						var pngBytes bytes.Buffer
+						err = png.Encode(&pngBytes, img)
+						if err == nil {
+							finalDataURL = fmt.Sprintf("data:image/png;base64,%s", base64.StdEncoding.EncodeToString(pngBytes.Bytes()))
+							log.Println("Successfully converted clipboard image to PNG data URL.")
+						} else {
+							log.Printf("Warning: Could not encode clipboard image to PNG: %v. Falling back to text.", err)
+						}
+					} else {
+						log.Printf("Warning: Clipboard contained image data, but could not decode it: %v. Falling back to text clipboard.", err)
+					}
 				}
+
+				// If image processing didn't yield a data URL, try text clipboard
+				if finalDataURL == "" {
+					clipboardContent := string(clipboard.Read(clipboard.FmtText))
+					if clipboardContent == "" {
+						msg := "Error: Clipboard is empty or content is not recognized as image or text data URL."
+						if rootFromClipboard {
+							msg = "Error: --from-clipboard was specified, but clipboard is empty or content is not recognized as image or text data URL."
+						}
+						log.Fatal(msg)
+					}
+					finalDataURL = clipboardContent
+					log.Println("Using text content from clipboard.")
+				}
+			} else {
+				log.Fatal("Error: No data source specified. Use --file, --data, or ensure clipboard content is available.")
+			}
+
+			if finalDataURL == "" {
+				log.Fatalf("Error: Could not obtain data URL from any source (%s).", dataSource)
+			}
+
+			if !strings.HasPrefix(finalDataURL, "data:") {
+				log.Fatalf("Error: Input from %s must be a valid data URL (e.g., data:image/png;base64,...). Received: %.100s...", dataSource, finalDataURL)
 			}
 
 			requestBody := map[string]string{
@@ -114,10 +161,9 @@ or by specifying an image file path via --file.`,
 					Success bool   `json:"success"`
 					Message string `json:"message,omitempty"`
 					Error   string `json:"error,omitempty"`
-				} `json:"response"` // Assuming the actual result from the JS is nested here
+				} `json:"response"`
 			}
 
-			// Handle cases where the top-level response might be an error string itself
 			var rawResponseOuter map[string]any
 			if err := json.Unmarshal(respBodyBytes, &rawResponseOuter); err != nil {
 				log.Fatalf("Error unmarshalling outer response JSON from /paste: %v. Raw response: %s", err, string(respBodyBytes))
@@ -125,26 +171,23 @@ or by specifying an image file path via --file.`,
 
 			responseField, ok := rawResponseOuter["response"]
 			if !ok {
-				// If "response" field is missing, it might be a direct error message from the server (e.g. timeout before response struct is formed)
 				log.Fatalf("Paste command failed. Raw server response: %s", string(respBodyBytes))
 			}
 
-			// Re-marshal and unmarshal just the 'response' field content to handle it being an object or an error string
 			responseBytes, err := json.Marshal(responseField)
 			if err != nil {
 				log.Fatalf("Error re-marshalling 'response' field: %v", err)
 			}
 
 			if err := json.Unmarshal(responseBytes, &pasteResponse.Response); err != nil {
-				// If unmarshalling into the specific success/error struct fails, print the raw field
 				log.Fatalf("Error unmarshalling paste command result: %v. Response field content: %s", err, string(responseBytes))
 			}
 			pasteResponse.RequestID, _ = rawResponseOuter["requestId"].(string)
 
 			if pasteResponse.Response.Success {
-				log.Printf("Paste command successful for selector '%s'. Message: %s (RequestID: %s)", selector, pasteResponse.Response.Message, pasteResponse.RequestID)
+				log.Printf("Paste command successful for selector '%s' from %s. Message: %s (RequestID: %s)", selector, dataSource, pasteResponse.Response.Message, pasteResponse.RequestID)
 			} else {
-				log.Printf("Paste command failed for selector '%s'. Error: %s (RequestID: %s)", selector, pasteResponse.Response.Error, pasteResponse.RequestID)
+				log.Printf("Paste command failed for selector '%s' (source: %s). Error: %s (RequestID: %s)", selector, dataSource, pasteResponse.Response.Error, pasteResponse.RequestID)
 			}
 		},
 	}
@@ -155,5 +198,7 @@ or by specifying an image file path via --file.`,
 }
 
 func init() {
-	AddCommand(clientPasteCmd()) // Add to the main client command group
+	AddCommand(clientPasteCmd())
+	// This command is added to rootCmd via AddCommand(clientPasteCmd()) in its own init in the provided file structure.
+	// If it were to be a subcommand of `client`, it would be `clientCmd.AddCommand(clientPasteCmd())` in `client.go`.
 }
