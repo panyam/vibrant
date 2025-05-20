@@ -6,11 +6,13 @@
   "devtools_page": "devtools.html",
   "permissions": [
     "storage",
+    "tabs",
     "activeTab"
   ],
   "host_permissions": [
     "ws://localhost:9999/*",
-    "wss://localhost:9999/*"
+    "wss://localhost:9999/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"

@@ -22,9 +22,10 @@ type Request struct {
 	SentAt     time.Time
 	Response   any // Stores the 'result' field from EVALUATION_RESULT or imageData for screenshots
 	ResponseAt time.Time
+	Timeout    time.Duration
 	err        error       // Stores error if evaluation resulted in an exception
 	finished   bool        // To prevent processing a response multiple times
-	recvChan   chan string // For the /eval?wait=true or /screenshot_elements?wait=true handler, made buffered
+	recvChan   chan string // For the /eval?wait=true or /screenshots?wait=true handler, made buffered
 }
 
 func NewRequest(clientId string, payload any) *Request {
@@ -38,6 +39,7 @@ func NewRequest(clientId string, payload any) *Request {
 		SentAt:   time.Now(),
 		ClientId: clientId,
 		Payload:  payload,
+		Timeout:  30 * time.Second,
 		recvChan: make(chan string, 1), // Buffered channel of size 1
 	}
 }
@@ -236,42 +238,50 @@ func (c *Conn) OnStart(conn *websocket.Conn) error {
 	go func() {
 		time.Sleep(1 * time.Second)
 		welcomeScript := "console.log('[AgentWelcome] Go backend says hello! Location: ' + window.location.href + '. Title: ' + document.title + '. Timestamp: ' + new Date().toLocaleTimeString()); ({ pageTitle: document.title, userAgent: navigator.userAgent, connectionTime: new Date().toISOString() });"
-		_ = c.handler.SubmitEvalRequest(c.ClientId, welcomeScript) // This will create a new request, okay for welcome.
+		req := NewRequest(c.ClientId, welcomeScript) // This will create a new request, okay for welcome.
+		c.handler.SubmitRequest("EVALUATE_SCRIPT", req)
 		log.Printf("Client %s: Sent welcome EVALUATE_SCRIPT.", c.ClientId)
 	}()
 	return nil
 }
 
-func (h *Handler) SubmitEvalRequest(clientId string, script string) *Request {
-	req := NewRequest(clientId, script)
+func (h *Handler) SubmitRequest(reqType string, req *Request) {
 	h.reqMutex.Lock()
 	h.pendingRequests[req.Id] = req
 	h.reqMutex.Unlock()
-	log.Printf("Stored pending eval request %s for client %s. Total pending: %d", req.Id, clientId, len(h.pendingRequests))
+	log.Printf("Stored pending eval request %s for client %s. Total pending: %d", req.Id, req.ClientId, len(h.pendingRequests))
 
 	messagePayload := map[string]any{
-		"type":             "EVALUATE_SCRIPT",
-		"requestId":        req.Id,
-		"scriptToEvaluate": script,
+		"type":      reqType,
+		"requestId": req.Id,
+		"payload":   req.Payload,
 	}
-	h.BroadcastToAgent(clientId, messagePayload)
-	return req
+	h.BroadcastToAgent(req.ClientId, messagePayload)
 }
 
-func (h *Handler) SubmitScreenshotElementsRequest(clientId string, selectors []string) *Request {
-	req := NewRequest(clientId, selectors) // Payload is the list of selectors
-	h.reqMutex.Lock()
-	h.pendingRequests[req.Id] = req
-	h.reqMutex.Unlock()
-	log.Printf("Stored pending screenshot request %s for client %s. Selectors: %v. Total pending: %d", req.Id, clientId, selectors, len(h.pendingRequests))
-
-	messagePayload := map[string]any{
-		"type":      "CAPTURE_ELEMENTS_SCREENSHOT",
-		"requestId": req.Id,
-		"selectors": selectors,
+func (h *Handler) WaitForRequest(req *Request) (response string, ok bool, timedout bool) {
+	clientId := req.ClientId
+	log.Printf("Client %s /eval: Waiting for response on recvChan for ReqID: %s", clientId, req.Id)
+	select {
+	case responseMsg, ok := <-req.recvChan:
+		if ok {
+			log.Printf("Client %s /eval: Received response for ReqID %s: %s", clientId, req.Id, responseMsg)
+		} else {
+			log.Printf("Client %s /eval: recvChan closed without a message for ReqID %s.", clientId, req.Id)
+		}
+		return responseMsg, ok, false
+	case <-time.After(req.Timeout): // Standard timeout for eval
+		log.Printf("Client %s /eval: Timed out waiting for response for ReqID %s", clientId, req.Id)
+		h.reqMutex.Lock()
+		if pendingReq, exists := h.pendingRequests[req.Id]; exists && !pendingReq.finished {
+			pendingReq.finished = true // Mark as finished to prevent further processing
+			close(pendingReq.recvChan) // Close chan to unblock any potential race
+			delete(h.pendingRequests, req.Id)
+			log.Printf("Client %s /eval: Cleaned up timed-out pending request %s", clientId, req.Id)
+		}
+		h.reqMutex.Unlock()
+		return "", false, true
 	}
-	h.BroadcastToAgent(clientId, messagePayload)
-	return req
 }
 
 func (h *Handler) BroadcastToAgent(clientId string, payload map[string]any) {
@@ -329,46 +339,33 @@ func NewServeMux() *http.ServeMux {
 			return
 		}
 
-		req := handler.SubmitEvalRequest(clientId, script)
+		req := NewRequest(clientId, script)
+		handler.SubmitRequest("EVALUATE_SCRIPT", req)
 
+		w.Header().Set("Content-Type", "application/json")
 		if wait {
-			log.Printf("Client %s /eval: Waiting for response on recvChan for ReqID: %s", clientId, req.Id)
-			select {
-			case responseMsg, ok := <-req.recvChan:
-				if ok {
-					log.Printf("Client %s /eval: Received response for ReqID %s: %s", clientId, req.Id, responseMsg)
-					w.Header().Set("Content-Type", "application/json")
-					// responseMsg is expected to be a JSON string of the result or an error string
-					// If it's an error string from our side, it might not be valid JSON, so wrap it.
-					// If it's from the client, it should be marshal-able JSON or a simple string.
-					// For simplicity, we assume if it starts with "Error:", it's not JSON from client.
-					if !json.Valid([]byte(responseMsg)) {
-						// Attempt to re-marshal if it's likely an error string we created
-						// This part could be more robust based on how errors are formatted
-						errorPayload := map[string]any{"error": responseMsg}
-						jsonError, _ := json.Marshal(errorPayload)
-						fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, string(jsonError))
-					} else {
-						fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, responseMsg)
-					}
-				} else {
-					log.Printf("Client %s /eval: recvChan closed without a message for ReqID %s.", clientId, req.Id)
-					http.Error(w, "Response channel closed or request processed/timed out.", http.StatusInternalServerError)
-				}
-			case <-time.After(30 * time.Second): // Standard timeout for eval
-				log.Printf("Client %s /eval: Timed out waiting for response for ReqID %s", clientId, req.Id)
+			response, ok, timedout := handler.WaitForRequest(req)
+			if timedout {
 				http.Error(w, "Timeout waiting for script evaluation response", http.StatusGatewayTimeout)
-				handler.reqMutex.Lock()
-				if pendingReq, exists := handler.pendingRequests[req.Id]; exists && !pendingReq.finished {
-					pendingReq.finished = true // Mark as finished to prevent further processing
-					close(pendingReq.recvChan) // Close chan to unblock any potential race
-					delete(handler.pendingRequests, req.Id)
-					log.Printf("Client %s /eval: Cleaned up timed-out pending request %s", clientId, req.Id)
+			} else if ok {
+				w.Header().Set("Content-Type", "application/json")
+				// response is expected to be a JSON string of the result or an error string
+				// If it's an error string from our side, it might not be valid JSON, so wrap it.
+				// If it's from the client, it should be marshal-able JSON or a simple string.
+				// For simplicity, we assume if it starts with "Error:", it's not JSON from client.
+				if !json.Valid([]byte(response)) {
+					// Attempt to re-marshal if it's likely an error string we created
+					// This part could be more robust based on how errors are formatted
+					errorPayload := map[string]any{"error": response}
+					jsonError, _ := json.Marshal(errorPayload)
+					fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, string(jsonError))
+				} else {
+					fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, response)
 				}
-				handler.reqMutex.Unlock()
+			} else {
+				http.Error(w, "Response channel closed or request processed/timed out.", http.StatusInternalServerError)
 			}
 		} else {
-			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{
 				"status":    "EVALUATE_SCRIPT command sent",
 				"requestId": req.Id,
@@ -376,7 +373,7 @@ func NewServeMux() *http.ServeMux {
 		}
 	})
 
-	mux.HandleFunc("POST /agents/{clientId}/screenshot_elements", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /agents/{clientId}/screenshots", func(w http.ResponseWriter, r *http.Request) {
 		clientId := r.PathValue("clientId")
 		if clientId == "" {
 			http.Error(w, "Client ID is missing in path", http.StatusBadRequest)
@@ -398,32 +395,18 @@ func NewServeMux() *http.ServeMux {
 			return
 		}
 
-		req := handler.SubmitScreenshotElementsRequest(clientId, requestBody.Selectors)
+		req := NewRequest(clientId, requestBody.Selectors)
+		handler.SubmitRequest("CAPTURE_ELEMENTS_SCREENSHOT", req)
 
 		if wait {
-			log.Printf("Client %s /screenshot_elements: Waiting for response for ReqID: %s", clientId, req.Id)
-			select {
-			case responseMsg, ok := <-req.recvChan:
-				if ok {
-					log.Printf("Client %s /screenshot_elements: Received response for ReqID %s: %s", clientId, req.Id, responseMsg)
-					w.Header().Set("Content-Type", "application/json")
-					// responseMsg is expected to be a JSON string of the imageData map or an error structure
-					fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, responseMsg)
-				} else {
-					log.Printf("Client %s /screenshot_elements: recvChan closed without a message for ReqID %s.", clientId, req.Id)
-					http.Error(w, "Response channel closed or request processed/timed out.", http.StatusInternalServerError)
-				}
-			case <-time.After(60 * time.Second): // Longer timeout for screenshots
-				log.Printf("Client %s /screenshot_elements: Timed out waiting for response for ReqID %s", clientId, req.Id)
-				http.Error(w, "Timeout waiting for screenshot response", http.StatusGatewayTimeout)
-				handler.reqMutex.Lock()
-				if pendingReq, exists := handler.pendingRequests[req.Id]; exists && !pendingReq.finished {
-					pendingReq.finished = true
-					close(pendingReq.recvChan)
-					delete(handler.pendingRequests, req.Id)
-					log.Printf("Client %s /screenshot_elements: Cleaned up timed-out pending request %s", clientId, req.Id)
-				}
-				handler.reqMutex.Unlock()
+			response, ok, timedout := handler.WaitForRequest(req)
+			if timedout {
+				http.Error(w, "Timeout waiting for script evaluation response", http.StatusGatewayTimeout)
+			} else if ok {
+				// responseMsg is expected to be a JSON string of the imageData map or an error structure
+				fmt.Fprintf(w, `{"requestId": "%s", "response": %s}`, req.Id, response)
+			} else {
+				http.Error(w, "Response channel closed or request processed/timed out.", http.StatusInternalServerError)
 			}
 		} else {
 			w.Header().Set("Content-Type", "application/json")
@@ -438,15 +421,16 @@ func NewServeMux() *http.ServeMux {
 			http.Error(w, "Missing 'agent' or 'script' query parameter", http.StatusBadRequest)
 			return
 		}
-		req := handler.SubmitEvalRequest(agentName, script)
+		req := NewRequest(agentName, script)
+		handler.SubmitRequest("EVALUATE_SCRIPT", req)
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Sent EVALUATE_SCRIPT to agent %s (ReqID: %s). Script: '%s'", agentName, req.Id, script)
 	})
 
 	log.Println("WebSocket ServeMux configured.")
-	log.Println("GET  /agents/{clientId}/subscribe - WebSocket connections")
-	log.Println("POST /agents/{clientId}/eval        - Evaluate script (add ?wait=true to wait for response)")
-	log.Println("POST /agents/{clientId}/screenshot_elements - Capture screenshots of elements (add ?wait=true to wait for response)")
+	log.Println("GET  /agents/{clientId}/subscribe 		- WebSocket connections")
+	log.Println("POST /agents/{clientId}/eval        	- Evaluate script (add ?wait=true to wait for response)")
+	log.Println("POST /agents/{clientId}/screenshots	- Capture screenshots of elements (add ?wait=true to wait for response)")
 	log.Println("GET  /test_eval?agent=<name>&script=<javascript> - Test script evaluation")
 	return mux
 }
