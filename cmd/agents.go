@@ -47,5 +47,5 @@ func init() {
 	agentsCmd.AddCommand(agentsServeCmd)
 
 	// Add flags for the 'agents serve' command
-	agentsServeCmd.Flags().StringP("port", "p", "9999", "Port for the agent WebSocket server.")
+	agentsServeCmd.Flags().StringP("port", "p", DEFAULT_VIBRANT_PORT, "Port for the agent WebSocket server.")
 }

@@ -11,6 +11,7 @@ import (
 // Global persistent flags - these will be accessible by all commands.
 // Variables are typically defined at the package level if they are to be truly global
 // and modified by PersistentPreRun or flag parsing.
+const DEFAULT_VIBRANT_PORT = "9999"
 const DEFAULT_VIBRANT_HOST = "localhost:9999"
 
 var rootCurrentClientId string
@@ -65,7 +66,7 @@ func init() {
 	// The default value for client-id will be "" if VIBRANT_CLIENT_ID is not set.
 	// Commands themselves will need to check if rootCurrentClientId is populated.
 	rootCmd.PersistentFlags().StringVarP(&rootCurrentClientId, "client-id", "i", os.Getenv("VIBRANT_CLIENT_ID"), "ID of the client. Default from VIBRANT_CLIENT_ID env var if set.")
-	rootCmd.PersistentFlags().StringVarP(&rootVibrantHost, "host", "i", os.Getenv("VIBRANT_HOST"), "Host to connect our client to.  Default from VIBRANT_CLIENT_ID env var if set otherwise localhost:9999.")
+	rootCmd.PersistentFlags().StringVarP(&rootVibrantHost, "host", "", os.Getenv("VIBRANT_HOST"), fmt.Sprintf("Host to connect our client to.  Default from VIBRANT_CLIENT_ID env var if set otherwise %s.", DEFAULT_VIBRANT_HOST))
 	rootCmd.PersistentFlags().BoolVarP(&rootFromClipboard, "from-clipboard", "c", false, "Read input from clipboard instead of from stdin (where applicable).")
 
 	// rootCmd.PersistentFlags().StringVarP(&dslFilePath, "file", "f", "", "Path to the DSL file (required by many commands)")
