@@ -13,7 +13,11 @@ checklinks:
 		echo "You are trying to deploying with symlinks.  Remove them first and make sure versions exist" && false ;	\
 	fi
 
-build: webbuild resymlink
+build: bin webbuild resymlink
+
+bin:
+	rm -f ${GOBIN}/vib
+	go build -o ${GOBIN}/vib cmd/*.go
 
 webbuild:
 	npm run build

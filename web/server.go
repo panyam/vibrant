@@ -277,7 +277,7 @@ func (c *Conn) OnStart(conn *websocket.Conn) error {
 					head.appendChild(vibStyles)
 				}
 				setTimeout(() => {
-					vibStyles.innerText = "code { max-height: 150px; } ms-text-chunk { max-height: 200px; overflow-y: scroll; }"
+					vibStyles.innerText = "code { max-height: 300px; } ms-text-chunk { max-height: 300px; overflow-y: scroll; }"
 				}, 10);
 				({ pageTitle: document.title, userAgent: navigator.userAgent, connectionTime: new Date().toISOString() })
 			})()`

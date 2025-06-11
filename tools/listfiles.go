@@ -25,8 +25,9 @@ func (r *ListFiles) Parameters() []*Parameter {
 	return []*Parameter{
 		{
 			Name:        "path",
-			Description: "Path of the folder to list files in.  Path will be resolved to a relative path in the current project",
+			Description: "Path of the folder to list files in.  Path will be resolved to a relative path in the current project.  Should be a relative path starting with './'. ",
 			Type:        "string",
+			Required:    true,
 		},
 		{
 			Name:        "recurse",
@@ -47,7 +48,10 @@ func (r *ListFiles) Returns() []*Parameter {
 }
 
 func (r *ListFiles) Run(args map[string]any) (any, error) {
-	path := args["path"].(string)
+	path := "."
+	if args != nil && args["path"] != nil {
+		path = args["path"].(string)
+	}
 	dir, err := filepath.Abs(filepath.Join(r.ProjectRoot, path))
 	if err != nil {
 		return nil, err
