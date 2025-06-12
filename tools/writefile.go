@@ -100,5 +100,5 @@ func (r *WriteFile) Run(args map[string]any) (any, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("Written %d bytes", len([]byte(contents))), nil
+	return fmt.Sprintf("Written %d bytes to %s", len([]byte(contents)), path), nil
 }
