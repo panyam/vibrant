@@ -2,11 +2,14 @@ package tools
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path"
 	"strings"
+	"sync"
 
 	"golang.design/x/clipboard"
 )
@@ -61,4 +64,50 @@ func GetInputFromUserOrClipboard(fromClipboard bool, prompt string) (input strin
 		input, err = getUserMessageTillEOF()
 	}
 	return
+}
+
+func RunCommand(fullCommand, workingDir string) (stdout io.Reader, stderr io.Reader, stdall io.Reader) {
+	// Parse the command - split on spaces (basic parsing)
+	parts := strings.Fields(fullCommand)
+	if len(parts) == 0 {
+		// Return empty readers for invalid command
+		return strings.NewReader(""), strings.NewReader(""), strings.NewReader("")
+	}
+
+	cmd := exec.Command(parts[0], parts[1:]...)
+	cmd.Dir = workingDir
+
+	// Buffers to capture output
+	var stdoutBuf, stderrBuf, combinedBuf bytes.Buffer
+
+	// Create writers that write to both individual buffers and combined buffer
+	stdoutWriter := io.MultiWriter(&stdoutBuf, &combinedBuf)
+	stderrWriter := io.MultiWriter(&stderrBuf, &combinedBuf)
+
+	// Use a mutex to ensure combined output is written in correct order
+	var mu sync.Mutex
+
+	// Wrap the writers with mutex protection for the combined buffer
+	cmd.Stdout = &synchronizedWriter{writer: stdoutWriter, mu: &mu}
+	cmd.Stderr = &synchronizedWriter{writer: stderrWriter, mu: &mu}
+
+	// Run the command
+	cmd.Run() // Ignoring error since we're capturing stderr anyway
+
+	// Return readers for the captured output
+	return strings.NewReader(stdoutBuf.String()),
+		strings.NewReader(stderrBuf.String()),
+		strings.NewReader(combinedBuf.String())
+}
+
+// synchronizedWriter wraps an io.Writer with mutex protection
+type synchronizedWriter struct {
+	writer io.Writer
+	mu     *sync.Mutex
+}
+
+func (sw *synchronizedWriter) Write(p []byte) (n int, err error) {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	return sw.writer.Write(p)
 }

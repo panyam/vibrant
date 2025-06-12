@@ -33,7 +33,7 @@ func listCalls() []map[string]any {
 					const textarea = node.querySelector("textarea")
 					console.log("Found Text Area: ", textarea)
 					if (contentNode) {
-						contentNode.style.maxHeight = "50px";
+						contentNode.style.maxHeight = "100px";
 						node.style.width = "100%";
 					}
 					if (nameNode && contentNode && submitButton) {
