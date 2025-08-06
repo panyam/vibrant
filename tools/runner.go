@@ -12,11 +12,11 @@ var tools map[string]Tool
 
 func init() {
 	tools = map[string]Tool{
-		"read_file":   &ReadFile{BaseFileTool{ProjectRoot: "./"}},
-		"list_files":  &ListFiles{BaseFileTool{ProjectRoot: "./"}},
-		"write_file":  &WriteFile{BaseFileTool{ProjectRoot: "./"}},
-		"rename_file": &RenameFile{BaseFileTool{ProjectRoot: "./"}},
-		"grep_files":  &GrepFiles{BaseFileTool{ProjectRoot: "./"}},
+		"read_file":         &ReadFile{BaseFileTool{ProjectRoot: "./"}},
+		"list_files":        &ListFiles{BaseFileTool{ProjectRoot: "./"}},
+		"write_file":        &WriteFile{BaseFileTool{ProjectRoot: "./"}},
+		"rename_file":       &RenameFile{BaseFileTool{ProjectRoot: "./"}},
+		"run_shell_command": &RunShellCommand{BaseFileTool{ProjectRoot: "./"}},
 		// "apply_file_diff": &ApplyFileDiff{BaseFileTool{ProjectRoot: "./"}},
 	}
 
